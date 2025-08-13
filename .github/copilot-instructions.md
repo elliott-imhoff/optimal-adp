@@ -12,7 +12,7 @@ This repository builds a simulator to optimize Average Draft Position (ADP) for 
 - Use deterministic behavior for reproducible results (fixed RNG seeds).
 - Include unit tests in `tests/` for any new logic.
 - Use `csv` library for loading / writing the csv data
-- Format with `pre-commit`, `black` and `flake8`; static type check with `mypy`.
+- Format with `pre-commit`, `black` and `flake8`; static type check with `mypy`. Make sure to git add all new files before running pre-commit
 - Use `logging` library to add logging statements when applicable to give progress information to the user. Keep debug information behind `--verbose` custom log level
 - Use python3.10 style type hints e.g. `list[]` instead of `List[]`
 - Use `poetry` to run all commands

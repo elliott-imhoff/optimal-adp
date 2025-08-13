@@ -28,6 +28,7 @@ line-length = 88
 
 [tool.mypy]
 strict = true
+warn_unreachable = true
 
 [tool.coverage.run]
 source = ["optimal_adp"]

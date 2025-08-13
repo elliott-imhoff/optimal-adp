@@ -27,4 +27,4 @@ repos:
         types: [python]
         pass_filenames: false
         always_run: true
-        args: [--cov-report=term, --cov-fail-under=0]
+        args: [--cov=optimal_adp, --cov-report=term, --cov-fail-under=90]

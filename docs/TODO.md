@@ -21,59 +21,59 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
 ## Phase 1: Data Processing & Setup
 
 ### 1.1 Data I/O Module (`optimal_adp/data_io.py`)
-- [ ] **`load_player_data()`**: Load and filter 2024 stats from CSV
+- [x] **`load_player_data()`**: Load and filter 2024 stats from CSV
   - Filter out K and DEF positions
   - Exclude players outside top 150 by TTL
   - Exclude players with <10 games played
   - Return typed player data structure
-- [ ] **`compute_initial_adp()`**: Calculate VBR-based initial ADP
+- [x] **`compute_initial_adp()`**: Calculate VBR-based initial ADP
   - Use baseline positions: QB21, RB29, WR43, TE11
   - VBR = player AVG - baseline AVG for position
   - Sort by VBR descending to get ADP order
-- [ ] **`save_adp_results()`**: Save ADP iteration results to CSV
-- [ ] **`save_regret_results()`**: Save regret scores to CSV
-- [ ] **`save_convergence_metrics()`**: Save convergence info to JSON
+- [x] **`save_adp_results()`**: Save ADP iteration results to CSV
+- [x] **`save_regret_results()`**: Save regret scores to CSV
+- [x] **`save_convergence_metrics()`**: Save convergence info to JSON
 
 ### 1.2 Configuration Module (`optimal_adp/config.py`)
-- [ ] **`DraftConfig`** dataclass: League settings
+- [x] **`DraftConfig`** dataclass: League settings
   - Teams: 10
   - Roster limits (QB:2, RB:2, WR:3, TE:1, FLEX:2)
   - Total picks: 100
-- [ ] **`OptimizationConfig`** dataclass: Algorithm settings
+- [x] **`OptimizationConfig`** dataclass: Algorithm settings
   - Learning rate η = 0.5
   - Convergence threshold ε = 0.25
   - Consecutive iterations M = 3
   - Max iterations K = 50
-- [ ] **`Player`** dataclass: Player data structure
-- [ ] **`Team`** dataclass: Team roster tracking
+- [x] **`Player`** dataclass: Player data structure
+- [x] **`Team`** dataclass: Team roster tracking
 
 ### 1.3 Tests for Phase 1
-- [ ] Test data loading and filtering
-- [ ] Test VBR calculation accuracy
-- [ ] Test I/O functions with fixture data
+- [x] Test data loading and filtering
+- [x] Test VBR calculation accuracy
+- [x] Test I/O functions with fixture data
 
 ### 1.4 Definition of Done
 ✅ **Phase 1 Complete When:**
-- [ ] All Phase 1.3 tests pass
-- [ ] >90% test coverage for Phase 1 modules
-- [ ] Pre-commit hooks pass (black, flake8, mypy)
-- [ ] Data structures properly typed with docstrings
-- [ ] Can load, filter, and compute initial ADP from real 2024 data
-- [ ] Can save/load configuration and results to/from files
+- [x] All Phase 1.3 tests pass
+- [x] >90% test coverage for Phase 1 modules
+- [x] Pre-commit hooks pass (black, flake8, mypy)
+- [x] Data structures properly typed with docstrings
+- [x] Can load, filter, and compute initial ADP from real 2024 data
+- [x] Can save/load configuration and results to/from files
 
 ## Phase 2: Draft Simulation Engine
 
 ### 2.1 Draft State Management (`optimal_adp/draft_simulator.py`)
 
 **Core Data Structures:**
-- [ ] **`DraftBoard`** class: Manages available players and ADP ordering
+- [x] **`DraftBoard`** class: Manages available players and ADP ordering
   - `available_players: List[Player]` - sorted by current ADP
   - `drafted_players: Set[str]` - track who's been picked
   - `get_eligible_players(team: Team) -> List[Player]` - filter by roster needs
   - `draft_player(player: Player) -> None` - remove from available pool
   - `reset_from_pick(pick_number: int) -> DraftBoard` - restore state for regret calculation
 
-- [ ] **`DraftState`** class: Complete draft simulation state
+- [x] **`DraftState`** class: Complete draft simulation state
   - `teams: List[Team]` - all 10 teams with current rosters
   - `draft_board: DraftBoard` - current player availability
   - `pick_order: List[int]` - snake draft order (team indices)
@@ -81,58 +81,58 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
   - `draft_history: List[Tuple[int, Player]]` - (pick_num, player) log
 
 **Core Draft Logic:**
-- [ ] **`generate_snake_order(num_teams: int, num_rounds: int) -> List[int]`**
+- [x] **`generate_snake_order(num_teams: int, num_rounds: int) -> List[int]`**
   - Create deterministic snake draft order
   - Round 1: [0,1,2,...,9], Round 2: [9,8,7,...,0], etc.
 
-- [ ] **`can_draft_player(player: Player, team: Team) -> bool`**
+- [x] **`can_draft_player(player: Player, team: Team) -> bool`**
   - Check if player position fits team's open roster slots
   - Handle FLEX eligibility (RB/WR/TE can fill FLEX)
   - Account for positional limits (QB:2, RB:2, WR:3, TE:1, FLEX:2)
 
-- [ ] **`make_greedy_pick(draft_state: DraftState) -> Player`**
+- [x] **`make_greedy_pick(draft_state: DraftState) -> Player`**
   - Find lowest ADP player that fits current team's needs
   - Tie-breaker: Highest average player score
   - Update draft state (remove player, add to team roster)
 
-- [ ] **`simulate_full_draft(players: List[Player], initial_adp: Dict[str, float]) -> DraftState`**
+- [x] **`simulate_full_draft(players: List[Player], initial_adp: Dict[str, float]) -> DraftState`**
   - Initialize empty teams and draft board
   - Execute 100 picks using greedy algorithm
   - Return final draft state with all rosters filled
 
 ### 2.2 Draft Replay & State Restoration
-- [ ] **`DraftState.clone() -> DraftState`**: Deep copy for counterfactual analysis
-- [ ] **`DraftState.rewind_to_pick(pick_number: int) -> DraftState`**
+- [x] **`DraftState.clone() -> DraftState`**: Deep copy for counterfactual analysis
+- [x] **`DraftState.rewind_to_pick(pick_number: int) -> DraftState`**
   - Restore draft state as it was before specific pick
   - Used for regret calculation "what-if" scenarios
-- [ ] **`simulate_from_pick(draft_state: DraftState, start_pick: int) -> DraftState`**
+- [x] **`simulate_from_pick(draft_state: DraftState, start_pick: int) -> DraftState`**
   - Continue draft simulation from given pick number
   - Used for counterfactual regret analysis
 
 ### 2.3 Team Management & Scoring
-- [ ] **`Team.add_player(player: Player) -> bool`**: Add to appropriate roster slot
-- [ ] **`Team.get_open_slots() -> Dict[str, int]`**: Return available positions
-- [ ] **`Team.is_roster_full() -> bool`**: Check if all starter slots filled
-- [ ] **`Team.calculate_total_score() -> float`**: Sum AVG across all starters
+- [x] **`Team.add_player(player: Player) -> bool`**: Add to appropriate roster slot
+- [x] **`Team.get_open_slots() -> Dict[str, int]`**: Return available positions
+- [x] **`Team.is_roster_full() -> bool`**: Check if all starter slots filled
+- [x] **`Team.calculate_total_score() -> float`**: Sum AVG across all starters
 
 ### 2.4 Tests for Phase 2
-- [ ] Test snake order generation (10 teams, 10 rounds)
-- [ ] Test roster eligibility logic (especially FLEX slot handling)
-- [ ] Test greedy pick selection with various ADP scenarios
-- [ ] Test draft state cloning and rewinding
-- [ ] Test complete draft simulation with known player pool
-- [ ] Test team scoring calculation
-- [ ] Test draft replay from arbitrary pick numbers
+- [x] Test snake order generation (10 teams, 10 rounds)
+- [x] Test roster eligibility logic (especially FLEX slot handling)
+- [x] Test greedy pick selection with various ADP scenarios
+- [x] Test draft state cloning and rewinding
+- [x] Test complete draft simulation with known player pool
+- [x] Test team scoring calculation
+- [x] Test draft replay from arbitrary pick numbers
 
 ### 2.5 Definition of Done
 ✅ **Phase 2 Complete When:**
-- [ ] All Phase 2.4 tests pass
-- [ ] >90% test coverage for Phase 2 modules
-- [ ] Pre-commit hooks pass (black, flake8, mypy)
-- [ ] Can simulate complete 100-pick snake draft
-- [ ] Draft state can be cloned and rewound to any pick
-- [ ] Team rosters properly enforce position limits and FLEX rules
-- [ ] Greedy algorithm consistently picks lowest ADP eligible player
+- [x] All Phase 2.4 tests pass
+- [x] >90% test coverage for Phase 2 modules
+- [x] Pre-commit hooks pass (black, flake8, mypy)
+- [x] Can simulate complete 100-pick snake draft
+- [x] Draft state can be cloned and rewound to any pick
+- [x] Team rosters properly enforce position limits and FLEX rules
+- [x] Greedy algorithm consistently picks lowest ADP eligible player
 
 ## Phase 3: Regret Calculation & ADP Updates (Combined)
 
