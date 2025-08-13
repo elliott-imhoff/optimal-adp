@@ -14,6 +14,8 @@ This repository builds a simulator to optimize Average Draft Position (ADP) for 
 - Use `csv` library for loading / writing the csv data
 - Format with `pre-commit`, `black` and `flake8`; static type check with `mypy`.
 - Use `logging` library to add logging statements when applicable to give progress information to the user. Keep debug information behind `--verbose` custom log level
+- Use python3.10 style type hints e.g. `list[]` instead of `List[]`
+- Use `poetry` to run all commands
 
 ---
 
