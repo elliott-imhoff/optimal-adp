@@ -1,2 +1,18 @@
 .DS_Store
 tmp/
+__pycache__/
+artifacts/
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# IDE files
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.local

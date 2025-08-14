@@ -7,10 +7,62 @@ authors = [
 ]
 readme = "README.md"
 
+[project.scripts]
+optimal-adp = "optimal_adp.cli:run"
+
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
 click = "*"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+black = "^23.0.0"
+flake8 = "^6.0.0"
+mypy = "^1.5.0"
+pre-commit = "^3.4.0"
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+
+[tool.flake8]
+max-line-length = 9999
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disable_error_code = ["misc"]
+
+[[tool.mypy.overrides]]
+module = "optimal_adp.cli"
+disable_error_code = ["misc"]
+
+[tool.coverage.run]
+source = ["optimal_adp"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--cov=optimal_adp --cov-report=term-missing --cov-report=html --cov-fail-under=90"
