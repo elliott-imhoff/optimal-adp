@@ -149,6 +149,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
         num_teams=args.num_teams,
         enable_perturbation=args.perturb,
         perturbation_factor=args.perturbation_factor,
+        artifacts_outputs=not args.no_artifacts,
     )
 
     sys.exit(0 if success else 1)
@@ -249,6 +250,12 @@ def main() -> None:
         type=float,
         default=0.1,
         help="Perturbation factor for initial ADP (default: 0.1 = 10 percent)",
+    )
+
+    validate_parser.add_argument(
+        "--no-artifacts",
+        action="store_true",
+        help="Disable archiving of optimization outputs",
     )
 
     validate_parser.add_argument(

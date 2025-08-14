@@ -1,7 +1,10 @@
-"""Validation module for optimization quality and convergence testing."""
+"""Main optimization module with validation and result archiving."""
 
 import logging
 import random
+import os
+from datetime import datetime
+from pathlib import Path
 
 from optimal_adp.config import NUM_TEAMS, Player
 from optimal_adp.data_io import load_player_data, compute_initial_adp
@@ -20,6 +23,8 @@ class ValidationResult:
         self.convergence_iterations: int | None = None
         self.final_position_changes: int | None = None
         self.convergence_history: list[int] = []
+        self.run_id: str | None = None
+        self.artifacts_dir: Path | None = None
 
     def add_failure(self, message: str) -> None:
         """Add a validation failure message."""
@@ -36,6 +41,32 @@ class ValidationResult:
         """Add informational message."""
         self.messages.append(f"ℹ️  {message}")
         logger.info(message)
+
+
+def create_run_directory(learning_rate: float, max_iterations: int) -> tuple[str, Path]:
+    """Create a timestamped directory for this optimization run.
+
+    Args:
+        learning_rate: Learning rate used for optimization
+        max_iterations: Maximum iterations for optimization
+
+    Returns:
+        Tuple of (run_id, artifacts_directory_path)
+    """
+    # Generate run ID based on current timestamp and parameters
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+    run_id = f"{timestamp}_lr{learning_rate}_iter{max_iterations}"
+
+    # Create artifacts directory structure
+    artifacts_base = Path("artifacts")
+    run_dir = artifacts_base / f"run_{run_id}"
+
+    # Create directories if they don't exist
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Created run directory: {run_dir}")
+    return run_id, run_dir
 
 
 def perturb_initial_adp(
@@ -161,8 +192,9 @@ def validate_convergence(
     num_teams: int = NUM_TEAMS,
     enable_perturbation: bool = False,
     perturbation_factor: float = 0.1,
+    artifacts_outputs: bool = True,
 ) -> ValidationResult:
-    """Validate that optimization converges with reasonable final rankings.
+    """Run optimization with validation and optional result archiving.
 
     Args:
         data_file_path: Path to player data CSV
@@ -171,6 +203,7 @@ def validate_convergence(
         num_teams: Number of teams in draft
         enable_perturbation: Whether to perturb initial ADP values
         perturbation_factor: Amount of perturbation to apply
+        artifacts_outputs: Whether to artifacts optimization outputs
 
     Returns:
         ValidationResult with test outcomes
@@ -178,6 +211,14 @@ def validate_convergence(
     result = ValidationResult()
 
     try:
+        # Create run directory if archiving
+        if artifacts_outputs:
+            run_id, artifacts_dir = create_run_directory(learning_rate, max_iterations)
+            result.run_id = run_id
+            result.artifacts_dir = artifacts_dir
+            result.add_info(f"Run ID: {run_id}")
+            result.add_info(f"Artifacts directory: {artifacts_dir}")
+
         # Load player data
         result.add_info(f"Loading player data from {data_file_path}")
         players = load_player_data(data_file_path)
@@ -196,11 +237,15 @@ def validate_convergence(
             f"Running optimization (learning_rate={learning_rate}, max_iterations={max_iterations})"
         )
 
-        # Run optimization by creating a temporary output file
-        import tempfile
+        # Set up output file path
+        if artifacts_outputs and result.artifacts_dir:
+            output_file = result.artifacts_dir / "final_adp.csv"
+        else:
+            # Use temporary file if not archiving
+            import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp_file:
-            temp_output = tmp_file.name
+            with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp_file:
+                output_file = Path(tmp_file.name)
 
         try:
             final_adp, convergence_history, iterations = optimize_adp(
@@ -208,13 +253,39 @@ def validate_convergence(
                 num_teams=num_teams,
                 max_iterations=max_iterations,
                 learning_rate=learning_rate,
-                output_file_path=temp_output,
+                output_file_path=str(output_file),
             )
 
-            # Clean up temp file
-            import os
+            # Save additional run metadata if archiving
+            if artifacts_outputs and result.artifacts_dir:
+                # Save run parameters
+                params_file = result.artifacts_dir / "run_parameters.txt"
+                with open(params_file, "w") as f:
+                    f.write(f"Run ID: {result.run_id}\n")
+                    f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+                    f.write(f"Data file: {data_file_path}\n")
+                    f.write(f"Learning rate: {learning_rate}\n")
+                    f.write(f"Max iterations: {max_iterations}\n")
+                    f.write(f"Number of teams: {num_teams}\n")
+                    f.write(f"Perturbation enabled: {enable_perturbation}\n")
+                    f.write(f"Perturbation factor: {perturbation_factor}\n")
+                    f.write(f"Final iterations: {iterations}\n")
+                    f.write(
+                        f"Final position changes: {convergence_history[-1] if convergence_history else 'N/A'}\n"
+                    )
 
-            os.unlink(temp_output)
+                # Save convergence history
+                history_file = result.artifacts_dir / "convergence_history.csv"
+                with open(history_file, "w") as f:
+                    f.write("iteration,position_changes\n")
+                    for i, changes in enumerate(convergence_history, 1):
+                        f.write(f"{i},{changes}\n")
+
+                result.add_info(f"Results artifactsd to: {result.artifacts_dir}")
+            else:
+                # Clean up temp file if not archiving
+                if not artifacts_outputs:
+                    os.unlink(str(output_file))
 
         except Exception as e:
             result.add_failure(f"Optimization failed: {str(e)}")
@@ -287,8 +358,9 @@ def validate_optimization(
     num_teams: int = NUM_TEAMS,
     enable_perturbation: bool = False,
     perturbation_factor: float = 0.1,
+    artifacts_outputs: bool = True,
 ) -> bool:
-    """Validate optimization quality and convergence.
+    """Run optimization with validation and result archiving.
 
     Args:
         data_file_path: Path to player data CSV
@@ -297,6 +369,7 @@ def validate_optimization(
         num_teams: Number of teams in draft
         enable_perturbation: Whether to perturb initial ADP values
         perturbation_factor: Amount of perturbation to apply
+        artifacts_outputs: Whether to artifacts optimization outputs
 
     Returns:
         True if all validations pass, False otherwise
@@ -308,6 +381,7 @@ def validate_optimization(
         num_teams=num_teams,
         enable_perturbation=enable_perturbation,
         perturbation_factor=perturbation_factor,
+        artifacts_outputs=artifacts_outputs,
     )
 
     # Print results
@@ -322,12 +396,6 @@ def validate_optimization(
         print(f"\nConvergence: {result.convergence_iterations} iterations")
     if result.final_position_changes is not None:
         print(f"Final position changes: {result.final_position_changes}")
-
-    # Display convergence history
-    if result.convergence_history:
-        print("\nPosition changes by iteration:")
-        for i, changes in enumerate(result.convergence_history, 1):
-            print(f"  Iteration {i:2d}: {changes:2d} changes")
 
     print("=" * 60)
 
