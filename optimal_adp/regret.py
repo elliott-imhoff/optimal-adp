@@ -99,17 +99,20 @@ def update_adp_from_regret_constrained(
     player_regrets: dict[str, float],
     learning_rate: float,
     all_players: list[Player],
+    drafted_players: set[str] | None = None,
 ) -> dict[str, float]:
     """Apply ADP update with position hierarchy constraints.
 
     Updates ADP while ensuring players with higher AVG within the same position
-    maintain earlier (lower) ADP values by swapping violators.
+    maintain earlier (lower) ADP values by swapping violators. Also pushes
+    undrafted players to later ADP positions.
 
     Args:
         current_adp: Current ADP values for all players
         player_regrets: Raw regret scores (in fantasy points)
         learning_rate: Learning rate η (e.g., 0.5)
         all_players: All players with their stats for hierarchy constraints
+        drafted_players: Set of player names who were drafted (optional)
 
     Returns:
         Updated ADP values that respect position hierarchy
@@ -117,12 +120,20 @@ def update_adp_from_regret_constrained(
     # First, apply unconstrained updates
     updated_adp = current_adp.copy()
 
+    # Apply regret-based updates for drafted players
     for player_name in player_regrets:
         if player_name in current_adp:
             old_adp = current_adp[player_name]
             regret_adjustment = learning_rate * player_regrets[player_name]
             new_adp = old_adp + regret_adjustment
             updated_adp[player_name] = new_adp
+
+    # Apply penalty to undrafted players by pushing them later in ADP
+    if drafted_players is not None:
+        for player_name in updated_adp:
+            if player_name not in drafted_players:
+                # Only apply penalty if player wasn't drafted
+                updated_adp[player_name] = updated_adp[player_name] + len(all_players)
 
     # Create player lookup for constraints
     player_lookup = {p.name: p for p in all_players}

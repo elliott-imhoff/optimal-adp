@@ -132,13 +132,6 @@ def compute_initial_adp(
         else:
             # If not enough players, use lowest available
             baseline_points[pos] = pos_players[-1].avg if pos_players else 0.0
-        pos_players = by_position[pos]
-        if len(pos_players) >= baseline_rank:
-            # Use the baseline rank player (1-indexed)
-            baseline_points[pos] = pos_players[baseline_rank - 1].avg
-        else:
-            # If not enough players, use lowest available
-            baseline_points[pos] = pos_players[-1].avg if pos_players else 0.0
 
     # Calculate VBR for each player
     players_with_vbr = []
@@ -186,6 +179,23 @@ def perturb_initial_adp(
 
     # Re-sort by new ADP values to maintain relative order
     perturbed.sort(key=lambda x: x[2])
+
+    # logger.info("EXTREME PERTURBATION: Reversing ADP values")
+
+    # # Sort by current ADP to get original order
+    # sorted_data = sorted(initial_adp_data, key=lambda x: x[2])
+
+    # # Reverse the ADP assignments: best player gets worst ADP, worst gets best
+    # perturbed = []
+    # total_players = len(sorted_data)
+
+    # for i, (player, vbr, original_adp) in enumerate(sorted_data):
+    #     # Flip the ADP: position 0 gets ADP total_players, position 1 gets total_players-1, etc.
+    #     reversed_adp = total_players - i
+    #     perturbed.append((player, vbr, reversed_adp))
+
+    # # Sort by new ADP values to maintain proper structure
+    # perturbed.sort(key=lambda x: x[2])
 
     return perturbed
 

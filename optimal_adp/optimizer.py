@@ -133,8 +133,11 @@ def optimize_adp(
         # 3c: Update ADP with regret scores (with hierarchy constraints)
         logger.debug("Updating ADP from regret scores")
 
+        # Get set of drafted players from draft state
+        drafted_players = {player.name for _, player in draft_state.draft_history}
+
         updated_adp = update_adp_from_regret_constrained(
-            current_adp, player_regrets, learning_rate, all_players
+            current_adp, player_regrets, learning_rate, all_players, drafted_players
         )
 
         # 3d: Rescale to valid pick numbers

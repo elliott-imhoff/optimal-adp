@@ -1,9 +1,10 @@
 """Command-line interface for ADP optimization."""
 
-import argparse
 import logging
 import sys
 from pathlib import Path
+
+import click
 
 from optimal_adp.optimizer import run_optimization_loop
 
@@ -73,95 +74,69 @@ def setup_logging(verbose: bool = False) -> None:
     root_logger.addHandler(handler)
 
 
-def cmd_validate(args: argparse.Namespace) -> None:
-    """Handle the validate subcommand."""
+@click.command()
+@click.argument("data_file", type=click.Path(exists=True))
+@click.option(
+    "--learning-rate",
+    type=float,
+    default=0.1,
+    help="Learning rate for optimization (default: 0.1)",
+)
+@click.option(
+    "--max-iterations",
+    type=int,
+    default=1000,
+    help="Maximum number of optimization iterations (default: 1000)",
+)
+@click.option(
+    "--num-teams",
+    type=int,
+    default=10,
+    help="Number of teams in the draft (default: 10)",
+)
+@click.option(
+    "--perturb",
+    type=float,
+    default=0.0,
+    help="Perturbation factor for initial ADP (default: 0.0 = no perturbation)",
+)
+@click.option(
+    "--no-artifacts",
+    is_flag=True,
+    help="Disable archiving of optimization outputs",
+)
+@click.option("--verbose", is_flag=True, help="Enable verbose (DEBUG level) logging")
+def run(
+    data_file: str,
+    learning_rate: float,
+    max_iterations: int,
+    num_teams: int,
+    perturb: float,
+    no_artifacts: bool,
+    verbose: bool,
+) -> None:
+    """Optimize fantasy football Average Draft Position (ADP) using regret minimization."""
     # Setup logging
-    setup_logging(args.verbose)
+    setup_logging(verbose)
 
     # Validate input file exists
-    data_file_path = Path(args.data_file)
+    data_file_path = Path(data_file)
     if not data_file_path.exists():
         print(f"❌ Input file does not exist: {data_file_path}")
         sys.exit(1)
 
-    # Run validation
+    # Run optimization
     success = run_optimization_loop(
         data_file_path=str(data_file_path),
-        learning_rate=args.learning_rate,
-        max_iterations=args.max_iterations,
-        num_teams=args.num_teams,
-        perturbation_factor=args.perturb,
-        artifacts_outputs=not args.no_artifacts,
+        learning_rate=learning_rate,
+        max_iterations=max_iterations,
+        num_teams=num_teams,
+        perturbation_factor=perturb,
+        artifacts_outputs=not no_artifacts,
     )
 
     sys.exit(0 if success else 1)
 
 
-def main() -> None:
-    """Run the CLI for ADP optimization."""
-    parser = argparse.ArgumentParser(
-        description="Optimize fantasy football Average Draft Position (ADP) using regret minimization"
-    )
-
-    # Create subcommands
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-    subparsers.required = True
-
-    # Validate subcommand
-    validate_parser = subparsers.add_parser(
-        "validate", help="Validate optimization quality"
-    )
-
-    # Required arguments for validate
-    validate_parser.add_argument(
-        "data_file", help="Path to CSV file containing player statistics"
-    )
-
-    # Optional arguments for validate
-    validate_parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=0.1,
-        help="Learning rate for optimization (default: 0.1)",
-    )
-
-    validate_parser.add_argument(
-        "--max-iterations",
-        type=int,
-        default=1000,
-        help="Maximum number of optimization iterations (default: 1000)",
-    )
-
-    validate_parser.add_argument(
-        "--num-teams",
-        type=int,
-        default=10,
-        help="Number of teams in the draft (default: 10)",
-    )
-
-    validate_parser.add_argument(
-        "--perturb",
-        type=float,
-        default=0.0,
-        help="Perturbation factor for initial ADP (default: 0.0 = no perturbation)",
-    )
-
-    validate_parser.add_argument(
-        "--no-artifacts",
-        action="store_true",
-        help="Disable archiving of optimization outputs",
-    )
-
-    validate_parser.add_argument(
-        "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging"
-    )
-
-    validate_parser.set_defaults(func=cmd_validate)
-
-    # Parse and execute
-    args = parser.parse_args()
-    args.func(args)
-
-
 if __name__ == "__main__":
-    main()
+    run()

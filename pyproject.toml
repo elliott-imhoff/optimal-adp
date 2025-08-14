@@ -7,6 +7,9 @@ authors = [
 ]
 readme = "README.md"
 
+[project.scripts]
+optimal-adp = "optimal_adp.cli:run"
+
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
 click = "*"
@@ -35,6 +38,10 @@ warn_unreachable = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
+disable_error_code = ["misc"]
+
+[[tool.mypy.overrides]]
+module = "optimal_adp.cli"
 disable_error_code = ["misc"]
 
 [tool.coverage.run]

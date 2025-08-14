@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from optimal_adp.data_io import load_player_data, compute_initial_adp
-from optimal_adp.main import setup_logging
+from optimal_adp.cli import setup_logging
 from optimal_adp.optimizer import optimize_adp, run_optimization_loop
 from optimal_adp.models import Player
 
