@@ -3,7 +3,14 @@
 import copy
 import logging
 
-from .config import Player, Team, ROSTER_SLOTS, DraftConfig
+from .config import (
+    Player,
+    Team,
+    ROSTER_SLOTS,
+    NUM_TEAMS,
+    generate_snake_order,
+    get_total_picks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,19 +80,16 @@ class DraftState:
         self,
         players: list[Player],
         adp_mapping: dict[str, float],
-        draft_config: DraftConfig | None = None,
+        num_teams: int = NUM_TEAMS,
     ):
         """Initialize draft state with empty teams and full player pool.
 
         Args:
             players: List of all eligible players
             adp_mapping: Dictionary of player_name -> ADP value
-            draft_config: Draft configuration (defaults to DraftConfig())
+            num_teams: Number of teams in the draft (defaults to NUM_TEAMS)
         """
-        if draft_config is None:
-            draft_config = DraftConfig()
-
-        self.draft_config = draft_config
+        self.num_teams = num_teams
         self.teams = [
             Team(
                 team_id=i,
@@ -95,11 +99,11 @@ class DraftState:
                 te_slots=[None] * ROSTER_SLOTS["TE"],
                 flex_slots=[None] * ROSTER_SLOTS["FLEX"],
             )
-            for i in range(draft_config.num_teams)
+            for i in range(num_teams)
         ]
 
         self.draft_board = DraftBoard(players, adp_mapping)
-        self.pick_order = draft_config.generate_snake_order()
+        self.pick_order = generate_snake_order(num_teams)
         self.current_pick = 0
         self.draft_history: list[tuple[int, Player]] = []
 
@@ -133,7 +137,7 @@ class DraftState:
                     break
 
         rewound_state = DraftState(
-            original_players, self.draft_board.adp_mapping, self.draft_config
+            original_players, self.draft_board.adp_mapping, self.num_teams
         )
 
         # Replay picks up to (but not including) the target pick
@@ -202,27 +206,24 @@ def make_greedy_pick(draft_state: DraftState) -> Player:
 def simulate_full_draft(
     players: list[Player],
     initial_adp: dict[str, float],
-    draft_config: DraftConfig | None = None,
+    num_teams: int = NUM_TEAMS,
 ) -> DraftState:
     """Simulate complete snake draft using greedy algorithm.
 
     Args:
         players: List of all eligible players
         initial_adp: Dictionary of player_name -> ADP value
-        draft_config: Draft configuration (defaults to DraftConfig())
+        num_teams: Number of teams in the draft (defaults to NUM_TEAMS)
 
     Returns:
         Final draft state with all rosters filled
     """
-    if draft_config is None:
-        draft_config = DraftConfig()
-
-    draft_state = DraftState(players, initial_adp, draft_config)
+    draft_state = DraftState(players, initial_adp, num_teams)
 
     logger.info("Starting draft simulation...")
 
     # Execute all picks
-    total_picks = draft_config.total_picks
+    total_picks = get_total_picks(num_teams)
     for pick_num in range(total_picks):
         try:
             make_greedy_pick(draft_state)
@@ -256,7 +257,7 @@ def simulate_from_pick(draft_state: DraftState, start_pick: int) -> DraftState:
     draft_state.current_pick = start_pick
 
     # Continue simulation from current state
-    total_picks = draft_state.draft_config.total_picks
+    total_picks = get_total_picks(draft_state.num_teams)
     while draft_state.current_pick < total_picks:
         try:
             make_greedy_pick(draft_state)

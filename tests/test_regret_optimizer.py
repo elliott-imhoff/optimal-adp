@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from optimal_adp.config import Player, DraftConfig
+from optimal_adp.config import Player
 from optimal_adp.draft_simulator import DraftState
 from optimal_adp.regret_optimizer import (
     calculate_pick_regret,
@@ -66,20 +66,13 @@ def sample_adp() -> dict[str, float]:
 
 
 @pytest.fixture
-def simple_draft_config() -> DraftConfig:
-    """Create simple 2-team draft config for testing."""
-    return DraftConfig(num_teams=2)
-
-
-@pytest.fixture
 def completed_draft_state(
     sample_players: list[Player],
     sample_adp: dict[str, float],
-    simple_draft_config: DraftConfig,
 ) -> DraftState:
     """Create a simple completed draft state for testing."""
-    # Create minimal draft state for testing regret calculation
-    draft_state = DraftState(sample_players, sample_adp, simple_draft_config)
+    # Create minimal draft state for testing regret calculation (2 teams)
+    draft_state = DraftState(sample_players, sample_adp, num_teams=2)
 
     # Manually set up a simple draft with just 4 picks for easier testing
     # Pick 0: Team 0 drafts QB1
@@ -185,8 +178,7 @@ class TestCalculatePickRegret:
     ) -> None:
         """Test that hierarchy violations result in high regret scores."""
         # Create a draft where a worse QB is picked before a better one
-        draft_config = DraftConfig(num_teams=2)
-        draft_state = DraftState(sample_players, sample_adp, draft_config)
+        draft_state = DraftState(sample_players, sample_adp, num_teams=2)
 
         # Set up a scenario where QB2 (20.0 avg) is drafted when QB1 (25.0 avg) was available
         # Draft history: Pick 0 - Team 0 drafts QB2 (worse choice)
@@ -207,8 +199,7 @@ class TestCalculatePickRegret:
     ) -> None:
         """Test that picking the best available player doesn't trigger hierarchy violation."""
         # Create draft where best QB is picked first
-        draft_config = DraftConfig(num_teams=2)
-        draft_state = DraftState(sample_players, sample_adp, draft_config)
+        draft_state = DraftState(sample_players, sample_adp, num_teams=2)
 
         # Draft history: Pick 0 - Team 0 drafts QB1 (best choice)
         draft_state.draft_history = [(0, sample_players[0])]  # QB1 (best QB)
@@ -235,8 +226,7 @@ class TestCalculatePickRegret:
     ) -> None:
         """Test that better players of different positions don't trigger violations."""
         # Create draft where RB is picked when better QB is available (different position)
-        draft_config = DraftConfig(num_teams=2)
-        draft_state = DraftState(sample_players, sample_adp, draft_config)
+        draft_state = DraftState(sample_players, sample_adp, num_teams=2)
 
         # Draft history: Pick 0 - Team 0 drafts RB1 when QB1 is available (different positions)
         draft_state.draft_history = [(0, sample_players[4])]  # RB1

@@ -1,7 +1,6 @@
 """Data loading and saving functions for optimal ADP calculation."""
 
 import csv
-import json
 from collections import defaultdict
 from typing import Any
 
@@ -41,15 +40,31 @@ def load_player_data(
         reader = csv.DictReader(f)
 
         for row in reader:
+            # Skip empty rows or rows with missing essential data
+            if not row or not row.get("Player") or not row.get("Pos"):
+                continue
+
             # Skip K and DEF positions
             if row["Pos"] in ["K", "DEF"]:
                 continue
 
-            # Convert numeric fields
+            # Convert numeric fields, handling None values and empty strings
             try:
-                avg = float(row["AVG"])
-                total = float(row["TTL"])
-            except (ValueError, KeyError):
+                avg_val = row.get("AVG")
+                total_val = row.get("TTL")
+
+                # Skip if values are None or empty strings
+                if (
+                    avg_val is None
+                    or total_val is None
+                    or avg_val == ""
+                    or total_val == ""
+                ):
+                    continue
+
+                avg = float(avg_val)
+                total = float(total_val)
+            except (ValueError, TypeError, KeyError):
                 continue  # Skip rows with invalid data
 
             # Calculate weeks played from total/average (avoid division by zero)
@@ -194,14 +209,3 @@ def save_regret_results(regret_data: list[dict[str, Any]], output_path: str) -> 
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(regret_data)
-
-
-def save_convergence_metrics(metrics: dict[str, Any], output_path: str) -> None:
-    """Save convergence metrics to JSON file.
-
-    Args:
-        metrics: Dictionary with convergence information
-        output_path: Path to output JSON file
-    """
-    with open(output_path, "w") as f:
-        json.dump(metrics, f, indent=2)

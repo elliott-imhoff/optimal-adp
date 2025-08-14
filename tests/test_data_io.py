@@ -1,7 +1,6 @@
 """Tests for data I/O functions."""
 
 import csv
-import json
 import tempfile
 from pathlib import Path
 
@@ -12,7 +11,6 @@ from optimal_adp.data_io import (
     compute_initial_adp,
     load_player_data,
     save_adp_results,
-    save_convergence_metrics,
     save_regret_results,
 )
 
@@ -40,6 +38,36 @@ def test_load_player_data_from_fixture() -> None:
     assert top_player.position == "QB"
     assert top_player.avg == 25.6
     assert top_player.total == 434.4
+
+
+def test_load_real_data_file() -> None:
+    """Test loading the actual 2024 stats CSV file."""
+    from pathlib import Path
+
+    data_file = Path("data/2024_stats.csv")
+    if not data_file.exists():
+        pytest.skip("Real data file not available")
+
+    players = load_player_data(str(data_file))
+
+    # Should load players successfully
+    assert len(players) > 0
+    assert len(players) <= 150  # Respects top_n_by_total limit
+
+    # Check that we got Player objects
+    assert all(isinstance(p, Player) for p in players)
+
+    # Check that no K or DEF positions were loaded
+    positions = {p.position for p in players}
+    assert "K" not in positions
+    assert "DEF" not in positions
+
+    # Check that all players have valid numeric stats
+    for player in players:
+        assert isinstance(player.avg, float)
+        assert isinstance(player.total, float)
+        assert player.avg >= 0
+        assert player.total >= 0
 
 
 def test_compute_initial_adp() -> None:
@@ -176,36 +204,6 @@ def test_save_regret_results() -> None:
     assert saved_data[0]["player"] == "Lamar Jackson"
     assert float(saved_data[0]["regret"]) == pytest.approx(0.0)
     assert float(saved_data[2]["regret"]) == pytest.approx(2.1)
-
-    # Clean up
-    Path(temp_path).unlink()
-
-
-def test_save_convergence_metrics() -> None:
-    """Test saving convergence metrics to JSON."""
-    metrics = {
-        "iterations": 15,
-        "converged": True,
-        "final_max_change": 0.15,
-        "learning_rate": 0.5,
-        "convergence_threshold": 0.25,
-    }
-
-    # Test saving to temporary file
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        temp_path = f.name
-
-    # Use our actual save function
-    save_convergence_metrics(metrics, temp_path)
-
-    # Verify JSON file
-    with open(temp_path, "r") as f:
-        saved_metrics = json.load(f)
-
-    assert saved_metrics["iterations"] == 15
-    assert saved_metrics["converged"] is True
-    assert saved_metrics["final_max_change"] == pytest.approx(0.15)
-    assert saved_metrics["learning_rate"] == pytest.approx(0.5)
 
     # Clean up
     Path(temp_path).unlink()

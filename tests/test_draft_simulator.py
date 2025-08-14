@@ -1,6 +1,6 @@
 """Tests for draft simulation engine."""
 
-from optimal_adp.config import Player, Team, DraftConfig
+from optimal_adp.config import Player, Team, generate_snake_order
 from optimal_adp.draft_simulator import (
     DraftBoard,
     DraftState,
@@ -12,8 +12,7 @@ from optimal_adp.draft_simulator import (
 
 def test_generate_snake_order() -> None:
     """Test snake order generation for 10 teams, 10 rounds."""
-    config = DraftConfig(num_teams=10)
-    order = config.generate_snake_order()
+    order = generate_snake_order(num_teams=10)
 
     # Should have 100 picks total (10 teams × 10 rounds)
     assert len(order) == 100  # First round should be 0-9

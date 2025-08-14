@@ -11,6 +11,20 @@ ROSTER_SLOTS = {
     "FLEX": 2,  # 2 FLEX slots (RB/WR/TE eligible)
 }
 
+# Baseline positions for VBR calculation
+BASELINE_POSITIONS = {
+    "QB": 21,  # QB21
+    "RB": 29,  # RB29
+    "WR": 43,  # WR43
+    "TE": 11,  # TE11
+}
+
+# Positions eligible for FLEX slots
+FLEX_POSITIONS = {"RB", "WR", "TE"}
+
+# Global draft configuration
+NUM_TEAMS = 10  # Number of teams in the league
+
 
 @dataclass
 class Player:
@@ -181,51 +195,42 @@ class Team:
         return False
 
 
-@dataclass
-class DraftConfig:
-    """Configuration for draft league settings.
+def get_total_rounds() -> int:
+    """Calculate total draft rounds from roster slots."""
+    return sum(ROSTER_SLOTS.values())
 
-    Attributes:
-        num_teams: Number of teams in league (10)
 
-    Note: Roster slot configuration is defined in ROSTER_SLOTS constant.
-    Total draft rounds automatically calculated from sum of ROSTER_SLOTS values.
+def get_total_picks(num_teams: int = NUM_TEAMS) -> int:
+    """Calculate total picks in draft."""
+    return num_teams * get_total_rounds()
+
+
+def generate_snake_order(num_teams: int = NUM_TEAMS) -> list[int]:
+    """Generate snake draft order for a given number of teams.
+
+    Args:
+        num_teams: Number of teams in the draft
+
+    Returns:
+        List of team indices representing snake draft order
+
+    Example:
+        For 4 teams, 3 rounds:
+        Round 1: [0, 1, 2, 3]
+        Round 2: [3, 2, 1, 0]
+        Round 3: [0, 1, 2, 3]
+        Result: [0, 1, 2, 3, 3, 2, 1, 0, 0, 1, 2, 3]
     """
+    total_rounds = sum(ROSTER_SLOTS.values())
+    pick_order: list[int] = []
 
-    num_teams: int = 10
+    for round_num in range(total_rounds):
+        if round_num % 2 == 0:  # Even rounds: normal order
+            pick_order.extend(range(num_teams))
+        else:  # Odd rounds: reverse order
+            pick_order.extend(range(num_teams - 1, -1, -1))
 
-    @property
-    def total_rounds(self) -> int:
-        """Calculate total draft rounds from roster slots."""
-        return sum(ROSTER_SLOTS.values())
-
-    @property
-    def total_picks(self) -> int:
-        """Calculate total picks in draft."""
-        return self.num_teams * self.total_rounds
-
-    def generate_snake_order(self) -> list[int]:
-        """Generate snake draft order for this draft configuration.
-
-        Returns:
-            List of team indices representing snake draft order
-
-        Example:
-            For 4 teams, 3 rounds:
-            Round 1: [0, 1, 2, 3]
-            Round 2: [3, 2, 1, 0]
-            Round 3: [0, 1, 2, 3]
-            Result: [0, 1, 2, 3, 3, 2, 1, 0, 0, 1, 2, 3]
-        """
-        pick_order: list[int] = []
-
-        for round_num in range(self.total_rounds):
-            if round_num % 2 == 0:  # Even rounds: normal order
-                pick_order.extend(range(self.num_teams))
-            else:  # Odd rounds: reverse order
-                pick_order.extend(range(self.num_teams - 1, -1, -1))
-
-        return pick_order
+    return pick_order
 
 
 @dataclass
@@ -243,15 +248,3 @@ class OptimizationConfig:
     convergence_threshold: float = 0.25
     consecutive_iterations: int = 3
     max_iterations: int = 50
-
-
-# Baseline positions for VBR calculation
-BASELINE_POSITIONS = {
-    "QB": 21,  # QB21
-    "RB": 29,  # RB29
-    "WR": 43,  # WR43
-    "TE": 11,  # TE11
-}
-
-# Positions eligible for FLEX slots
-FLEX_POSITIONS = {"RB", "WR", "TE"}

@@ -1,7 +1,10 @@
 """Tests for configuration data structures."""
 
 from optimal_adp.config import (
-    DraftConfig,
+    NUM_TEAMS,
+    generate_snake_order,
+    get_total_rounds,
+    get_total_picks,
     OptimizationConfig,
     Player,
     Team,
@@ -71,13 +74,35 @@ def test_team_auto_init() -> None:
     )
 
 
-def test_draft_config() -> None:
-    """Test DraftConfig dataclass with league settings."""
-    config = DraftConfig(num_teams=10)
+def test_draft_functions() -> None:
+    """Test draft configuration functions."""
+    # Test global NUM_TEAMS
+    assert NUM_TEAMS == 10
 
-    assert config.num_teams == 10
-    assert config.total_rounds == sum(ROSTER_SLOTS.values())
-    assert config.total_picks == 100
+    # Test total rounds calculation
+    total_rounds = get_total_rounds()
+    assert total_rounds == sum(ROSTER_SLOTS.values())
+
+    # Test total picks calculation
+    total_picks = get_total_picks(10)
+    assert total_picks == 100
+
+    # Test with custom number of teams
+    assert get_total_picks(12) == 12 * total_rounds
+
+    # Test snake order generation
+    snake_order = generate_snake_order(4)
+    expected_length = 4 * total_rounds
+    assert len(snake_order) == expected_length
+
+    # Test first few picks are in correct snake pattern
+    assert snake_order[0] == 0  # First pick: team 0
+    assert snake_order[1] == 1  # Second pick: team 1
+    assert snake_order[2] == 2  # Third pick: team 2
+    assert snake_order[3] == 3  # Fourth pick: team 3
+    # Snake back
+    assert snake_order[4] == 3  # Fifth pick: team 3 (reverse order)
+    assert snake_order[5] == 2  # Sixth pick: team 2
 
 
 def test_optimization_config() -> None:
