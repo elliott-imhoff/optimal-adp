@@ -1,19 +1,10 @@
-"""Data loading and saving functions for optimal ADP calculation."""
+"""Data input/output module for player statistics and ADP values."""
 
 import csv
 from collections import defaultdict
 from typing import Any
 
-from .config import Player
-
-# Baseline positions for VBR calculation (position: rank)
-# These represent the "replacement level" player at each position
-BASELINE_POSITIONS = {
-    "QB": 12,  # QB12 baseline
-    "RB": 24,  # RB24 baseline
-    "WR": 36,  # WR36 baseline
-    "TE": 12,  # TE12 baseline
-}
+from .config import BASELINE_POSITIONS, Player
 
 
 def load_player_data(
@@ -30,7 +21,7 @@ def load_player_data(
         List of filtered Player objects
 
     Filters applied:
-        - Exclude K and DEF positions
+        - Include only positions defined in BASELINE_POSITIONS (QB, RB, WR, TE)
         - Exclude players outside top N by total points
         - Exclude players with < min_weeks played (calculated from total/avg)
     """
@@ -44,8 +35,8 @@ def load_player_data(
             if not row or not row.get("Player") or not row.get("Pos"):
                 continue
 
-            # Skip K and DEF positions
-            if row["Pos"] in ["K", "DEF"]:
+            # Only include positions that have baseline values defined
+            if row["Pos"] not in BASELINE_POSITIONS.keys():
                 continue
 
             # Convert numeric fields, handling None values and empty strings

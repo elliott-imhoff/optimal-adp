@@ -141,6 +141,59 @@ class TestOptimizeAdp:
                 output_file_path="test_output.csv",
             )
 
+    def test_constrained_optimization_maintains_hierarchy(
+        self, temp_data_file: str
+    ) -> None:
+        """Test that constrained optimization maintains position hierarchy."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "constrained_adp.csv"
+
+            # Run optimization with higher learning rate to force position changes
+            optimize_adp(
+                data_file_path=temp_data_file,
+                num_teams=SMALL_DRAFT_NUM_TEAMS,
+                max_iterations=3,
+                learning_rate=0.5,  # Higher learning rate to create potential violations
+                output_file_path=str(output_path),
+            )
+
+            # Read output and verify position hierarchy is maintained
+            with open(output_path, "r") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+
+            # Group players by position
+            from typing import Dict, Any
+
+            players_by_pos: Dict[str, list[Dict[str, Any]]] = {}
+            for row in rows:
+                pos = row["position"]
+                if pos not in players_by_pos:
+                    players_by_pos[pos] = []
+                players_by_pos[pos].append(
+                    {
+                        "name": row["name"],
+                        "avg": float(row["avg"]),
+                        "adp": float(row["adp"]),
+                    }
+                )
+
+            # Verify hierarchy within each position
+            for position, players in players_by_pos.items():
+                # Sort by ADP (draft order)
+                players.sort(key=lambda p: p["adp"])
+
+                # Verify that AVG decreases as ADP increases (later picks)
+                for i in range(len(players) - 1):
+                    current_player = players[i]
+                    next_player = players[i + 1]
+
+                    assert current_player["avg"] >= next_player["avg"], (
+                        f"Position hierarchy violated in {position}: "
+                        f"{current_player['name']} (AVG: {current_player['avg']}) "
+                        f"drafted before {next_player['name']} (AVG: {next_player['avg']})"
+                    )
+
 
 class TestMainCLI:
     """Tests for the CLI interface."""
@@ -167,8 +220,8 @@ class TestMainCLI:
         mock_optimize.return_value = ({"QB1": 1.0, "RB1": 2.0}, [5, 2, 0], 3)
 
         # Mock command line arguments
-        mock_argv.__getitem__ = lambda _, i: ["main.py", temp_data_file][i]
-        mock_argv.__len__ = lambda _: 2
+        mock_argv.__getitem__ = lambda _, i: ["main.py", "optimize", temp_data_file][i]
+        mock_argv.__len__ = lambda _: 3
 
         # Should not raise any exceptions
         try:
@@ -181,8 +234,12 @@ class TestMainCLI:
     def test_cli_invalid_input_file(self, mock_argv: MagicMock) -> None:
         """Test CLI handling of invalid input file."""
         # Mock command line arguments with non-existent file
-        mock_argv.__getitem__ = lambda _, i: ["main.py", "nonexistent_file.csv"][i]
-        mock_argv.__len__ = lambda _: 2
+        mock_argv.__getitem__ = lambda _, i: [
+            "main.py",
+            "optimize",
+            "nonexistent_file.csv",
+        ][i]
+        mock_argv.__len__ = lambda _: 3
 
         # Should exit with error code
         with pytest.raises(SystemExit) as exc_info:
@@ -201,6 +258,7 @@ class TestMainCLI:
         # Mock command line arguments with all options
         args = [
             "main.py",
+            "optimize",
             temp_data_file,
             "--output",
             "test_output.csv",
@@ -239,8 +297,8 @@ class TestMainCLI:
         # Mock optimization failure
         mock_optimize.side_effect = Exception("Optimization failed")
 
-        mock_argv.__getitem__ = lambda _, i: ["main.py", temp_data_file][i]
-        mock_argv.__len__ = lambda _: 2
+        mock_argv.__getitem__ = lambda _, i: ["main.py", "optimize", temp_data_file][i]
+        mock_argv.__len__ = lambda _: 3
 
         # Should exit with error code
         with pytest.raises(SystemExit) as exc_info:

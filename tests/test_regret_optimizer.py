@@ -5,10 +5,11 @@ from unittest.mock import patch, MagicMock
 
 from optimal_adp.config import Player
 from optimal_adp.draft_simulator import DraftState
-from optimal_adp.regret_optimizer import (
+from optimal_adp.regret import (
     calculate_pick_regret,
     calculate_all_regrets,
     update_adp_from_regret,
+    update_adp_from_regret_constrained,
     rescale_adp_to_picks,
     validate_position_hierarchy,
     check_convergence,
@@ -119,7 +120,7 @@ class TestCalculatePickRegret:
         with pytest.raises(ValueError, match="Invalid pick number"):
             calculate_pick_regret(completed_draft_state, 10)
 
-    @patch("optimal_adp.regret_optimizer.simulate_from_pick")
+    @patch("optimal_adp.regret.simulate_from_pick")
     def test_regret_calculation_logic(
         self, mock_simulate: MagicMock, completed_draft_state: DraftState
     ) -> None:
@@ -156,7 +157,7 @@ class TestCalculatePickRegret:
         )
 
         # Calculate regret for pick 0
-        with patch("optimal_adp.regret_optimizer.simulate_from_pick") as mock_simulate:
+        with patch("optimal_adp.regret.simulate_from_pick") as mock_simulate:
             mock_counterfactual_state = MagicMock()
             mock_counterfactual_team = MagicMock()
             mock_counterfactual_team.calculate_total_score.return_value = 45.0
@@ -173,42 +174,19 @@ class TestCalculatePickRegret:
             == original_drafted_players
         )
 
-    def test_position_hierarchy_violation_high_regret(
+    def test_regret_calculation_counterfactual_better(
         self, sample_players: list[Player], sample_adp: dict[str, float]
     ) -> None:
-        """Test that hierarchy violations result in high regret scores."""
-        # Create a draft where a worse QB is picked before a better one
+        """Test regret calculation when counterfactual scenario is better."""
+        # Create a draft state with one pick made
         draft_state = DraftState(sample_players, sample_adp, num_teams=2)
-
-        # Set up a scenario where QB2 (20.0 avg) is drafted when QB1 (25.0 avg) was available
-        # Draft history: Pick 0 - Team 0 drafts QB2 (worse choice)
-        draft_state.draft_history = [(0, sample_players[1])]  # QB2
+        draft_state.draft_history = [(0, sample_players[1])]  # QB2 drafted
         draft_state.teams[0].add_player(sample_players[1])  # QB2 to team 0
         draft_state.draft_board.drafted_players.add("QB2")
         draft_state.current_pick = 1
 
-        # Calculate regret - should be high due to hierarchy violation
-        regret = calculate_pick_regret(draft_state, 0)
-
-        # Should be high regret (QB1 has 5.0 higher avg * 10 multiplier = 50.0)
-        expected_regret = (25.0 - 20.0) * 10.0  # 50.0
-        assert regret == expected_regret
-
-    def test_position_hierarchy_no_violation(
-        self, sample_players: list[Player], sample_adp: dict[str, float]
-    ) -> None:
-        """Test that picking the best available player doesn't trigger hierarchy violation."""
-        # Create draft where best QB is picked first
-        draft_state = DraftState(sample_players, sample_adp, num_teams=2)
-
-        # Draft history: Pick 0 - Team 0 drafts QB1 (best choice)
-        draft_state.draft_history = [(0, sample_players[0])]  # QB1 (best QB)
-        draft_state.teams[0].add_player(sample_players[0])
-        draft_state.draft_board.drafted_players.add("QB1")
-        draft_state.current_pick = 1
-
-        # Mock counterfactual simulation since no hierarchy violation
-        with patch("optimal_adp.regret_optimizer.simulate_from_pick") as mock_simulate:
+        # Mock counterfactual simulation to return better score
+        with patch("optimal_adp.regret.simulate_from_pick") as mock_simulate:
             mock_counterfactual_state = MagicMock()
             mock_counterfactual_team = MagicMock()
             mock_counterfactual_team.calculate_total_score.return_value = 30.0
@@ -217,25 +195,46 @@ class TestCalculatePickRegret:
 
             regret = calculate_pick_regret(draft_state, 0)
 
-        # Should use counterfactual calculation, not hierarchy violation
-        # regret = counterfactual (30.0) - original (25.0) = 5.0
-        assert regret == 5.0
+        # Regret = counterfactual (30.0) - original (20.0) = 10.0
+        assert regret == 10.0
 
-    def test_position_hierarchy_different_position_no_violation(
+    def test_regret_calculation_counterfactual_worse(
         self, sample_players: list[Player], sample_adp: dict[str, float]
     ) -> None:
-        """Test that better players of different positions don't trigger violations."""
-        # Create draft where RB is picked when better QB is available (different position)
+        """Test regret calculation when counterfactual scenario is worse."""
+        # Create draft where good choice was made
         draft_state = DraftState(sample_players, sample_adp, num_teams=2)
+        draft_state.draft_history = [(0, sample_players[0])]  # QB1 (best QB)
+        draft_state.teams[0].add_player(sample_players[0])
+        draft_state.draft_board.drafted_players.add("QB1")
+        draft_state.current_pick = 1
 
-        # Draft history: Pick 0 - Team 0 drafts RB1 when QB1 is available (different positions)
+        # Mock counterfactual simulation to return worse score
+        with patch("optimal_adp.regret.simulate_from_pick") as mock_simulate:
+            mock_counterfactual_state = MagicMock()
+            mock_counterfactual_team = MagicMock()
+            mock_counterfactual_team.calculate_total_score.return_value = 20.0
+            mock_counterfactual_state.teams = [mock_counterfactual_team, MagicMock()]
+            mock_simulate.return_value = mock_counterfactual_state
+
+            regret = calculate_pick_regret(draft_state, 0)
+
+        # Regret = counterfactual (20.0) - original (25.0) = -5.0 (negative regret = good pick)
+        assert regret == -5.0
+
+    def test_different_positions_normal_regret_calculation(
+        self, sample_players: list[Player], sample_adp: dict[str, float]
+    ) -> None:
+        """Test that regret calculation works normally across different positions."""
+        # Create draft where RB is picked
+        draft_state = DraftState(sample_players, sample_adp, num_teams=2)
         draft_state.draft_history = [(0, sample_players[4])]  # RB1
         draft_state.teams[0].add_player(sample_players[4])
         draft_state.draft_board.drafted_players.add("RB1")
         draft_state.current_pick = 1
 
-        # Mock counterfactual simulation since no hierarchy violation (different positions)
-        with patch("optimal_adp.regret_optimizer.simulate_from_pick") as mock_simulate:
+        # Mock counterfactual simulation
+        with patch("optimal_adp.regret.simulate_from_pick") as mock_simulate:
             mock_counterfactual_state = MagicMock()
             mock_counterfactual_team = MagicMock()
             mock_counterfactual_team.calculate_total_score.return_value = 20.0
@@ -252,7 +251,7 @@ class TestCalculatePickRegret:
 class TestCalculateAllRegrets:
     """Tests for calculate_all_regrets function."""
 
-    @patch("optimal_adp.regret_optimizer.calculate_pick_regret")
+    @patch("optimal_adp.regret.calculate_pick_regret")
     def test_calculate_all_regrets(
         self, mock_calculate_pick: MagicMock, completed_draft_state: DraftState
     ) -> None:
@@ -316,6 +315,162 @@ class TestUpdateAdpFromRegret:
         updated = update_adp_from_regret(current_adp, player_regrets, learning_rate)
 
         assert updated["Player1"] == 15.0  # No change
+
+
+class TestUpdateAdpFromRegreConstrainted:
+    """Tests for update_adp_from_regret_constrained function."""
+
+    def test_no_violations_no_swaps(self, sample_players: list[Player]) -> None:
+        """Test that when hierarchy is already correct, no swaps occur."""
+        # Set up ADP where hierarchy is already correct
+        current_adp = {
+            "QB1": 1.0,  # QB1 (avg=25.0) before QB2 (avg=20.0) ✓
+            "QB2": 2.0,
+            "RB1": 3.0,  # RB1 (avg=18.0) before RB2 (avg=15.0) ✓
+            "RB2": 4.0,
+        }
+
+        player_regrets = {
+            "QB1": 0.5,  # Small positive regret
+            "QB2": -0.5,  # Small negative regret
+            "RB1": 0.0,  # No regret
+            "RB2": 1.0,  # Positive regret
+        }
+
+        learning_rate = 0.1
+
+        updated = update_adp_from_regret_constrained(
+            current_adp, player_regrets, learning_rate, sample_players
+        )
+
+        # Should apply regret updates without any swaps needed
+        assert updated["QB1"] == pytest.approx(1.05)  # 1.0 + 0.1 * 0.5
+        assert updated["QB2"] == pytest.approx(1.95)  # 2.0 + 0.1 * (-0.5)
+        assert updated["RB1"] == pytest.approx(3.0)  # 3.0 + 0.1 * 0.0
+        assert updated["RB2"] == pytest.approx(4.1)  # 4.0 + 0.1 * 1.0
+
+        # Verify hierarchy is still maintained
+        assert updated["QB1"] < updated["QB2"]  # Higher AVG QB first
+        assert updated["RB1"] < updated["RB2"]  # Higher AVG RB first
+
+    def test_same_position_violation_swap(self, sample_players: list[Player]) -> None:
+        """Test that violating same-position players get swapped."""
+        # Set up ADP with violations
+        current_adp = {
+            "QB1": 5.0,  # QB1 (avg=25.0) after QB2 (avg=20.0) ✗ VIOLATION
+            "QB2": 1.0,
+            "WR1": 8.0,  # WR1 (avg=16.0) after WR2 (avg=14.0) ✗ VIOLATION
+            "WR2": 3.0,
+        }
+
+        player_regrets = {"QB1": 0.0, "QB2": 0.0, "WR1": 0.0, "WR2": 0.0}
+        learning_rate = 0.1
+
+        updated = update_adp_from_regret_constrained(
+            current_adp, player_regrets, learning_rate, sample_players
+        )
+
+        # QB1 and QB2 should be swapped
+        assert updated["QB1"] == 1.0  # QB1 (higher AVG) gets earlier ADP
+        assert updated["QB2"] == 5.0  # QB2 (lower AVG) gets later ADP
+
+        # WR1 and WR2 should be swapped
+        assert updated["WR1"] == 3.0  # WR1 (higher AVG) gets earlier ADP
+        assert updated["WR2"] == 8.0  # WR2 (lower AVG) gets later ADP
+
+    def test_multiple_violations_same_position(
+        self, sample_players: list[Player]
+    ) -> None:
+        """Test handling multiple violations within same position."""
+        # Create complex violation scenario with 4 WRs
+        current_adp = {
+            "WR1": 8.0,  # WR1 (avg=16.0) - should be 1st
+            "WR2": 2.0,  # WR2 (avg=14.0) - should be 2nd
+            "WR3": 1.0,  # WR3 (avg=13.0) - should be 3rd
+            "WR4": 4.0,  # WR4 (avg=12.0) - should be 4th
+        }
+
+        player_regrets = {"WR1": 0.0, "WR2": 0.0, "WR3": 0.0, "WR4": 0.0}
+        learning_rate = 0.1
+
+        updated = update_adp_from_regret_constrained(
+            current_adp, player_regrets, learning_rate, sample_players
+        )
+
+        # Should fix the ordering so higher AVG players have lower ADP
+        wr_players = [(name, updated[name]) for name in ["WR1", "WR2", "WR3", "WR4"]]
+        wr_players.sort(key=lambda x: x[1])  # Sort by ADP
+
+        # Order should be WR1, WR2, WR3, WR4 (by descending AVG)
+        assert wr_players[0][0] == "WR1"  # Highest AVG, lowest ADP
+        assert wr_players[1][0] == "WR2"
+        assert wr_players[2][0] == "WR3"
+        assert wr_players[3][0] == "WR4"  # Lowest AVG, highest ADP
+
+    def test_cross_position_no_swaps(self, sample_players: list[Player]) -> None:
+        """Test that different positions don't affect each other."""
+        current_adp = {
+            "QB1": 10.0,  # QB (avg=25.0) after RB (avg=18.0) - OK, different positions
+            "RB1": 1.0,
+            "WR1": 5.0,  # WR (avg=16.0) between QB and RB - OK, different positions
+        }
+
+        player_regrets = {"QB1": 0.0, "RB1": 0.0, "WR1": 0.0}
+        learning_rate = 0.1
+
+        updated = update_adp_from_regret_constrained(
+            current_adp, player_regrets, learning_rate, sample_players
+        )
+
+        # No swaps should occur - different positions
+        assert updated["QB1"] == 10.0
+        assert updated["RB1"] == 1.0
+        assert updated["WR1"] == 5.0
+
+    def test_regret_applied_before_constraints(
+        self, sample_players: list[Player]
+    ) -> None:
+        """Test that regret updates are applied before constraint checking."""
+        current_adp = {
+            "QB1": 1.0,
+            "QB2": 2.0,
+        }
+
+        # Large regret that would create violation, then get fixed by swapping
+        player_regrets = {
+            "QB1": 5.0,  # Large positive regret pushes QB1 later
+            "QB2": -2.0,  # Negative regret brings QB2 earlier
+        }
+
+        learning_rate = 1.0  # Full regret application
+
+        updated = update_adp_from_regret_constrained(
+            current_adp, player_regrets, learning_rate, sample_players
+        )
+
+        # After regret: QB1 would be 6.0, QB2 would be 0.0
+        # This creates violation (QB1 higher AVG but later ADP)
+        # Should be swapped: QB1 gets 0.0, QB2 gets 6.0
+        assert updated["QB1"] == 0.0  # QB1 (higher AVG) gets earlier pick
+        assert updated["QB2"] == 6.0  # QB2 (lower AVG) gets later pick
+
+    def test_handles_missing_players(self, sample_players: list[Player]) -> None:
+        """Test graceful handling of players not in lookup."""
+        current_adp = {
+            "QB1": 1.0,
+            "UnknownPlayer": 2.0,  # Not in sample_players
+        }
+
+        player_regrets = {"QB1": 1.0, "UnknownPlayer": -1.0}
+        learning_rate = 0.5
+
+        # Should not crash, just skip unknown players
+        updated = update_adp_from_regret_constrained(
+            current_adp, player_regrets, learning_rate, sample_players
+        )
+
+        assert updated["QB1"] == 1.5  # Regret applied
+        assert updated["UnknownPlayer"] == 1.5  # Regret applied, no constraints
 
 
 class TestRescaleAdpToPicks:

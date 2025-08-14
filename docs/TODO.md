@@ -32,7 +32,6 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
   - Sort by VBR descending to get ADP order
 - [x] **`save_adp_results()`**: Save ADP iteration results to CSV
 - [x] **`save_regret_results()`**: Save regret scores to CSV
-- [x] **`save_convergence_metrics()`**: Save convergence info to JSON
 
 ### 1.2 Configuration Module (`optimal_adp/config.py`)
 - [x] **`DraftConfig`** dataclass: League settings
@@ -136,7 +135,7 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
 
 ## Phase 3: Regret Calculation & ADP Updates (Combined) ✅
 
-### 3.1 Regret Calculation (`optimal_adp/regret_optimizer.py`)
+### 3.1 Regret Calculation (`optimal_adp/regret.py`)
 - [x] **`calculate_pick_regret(original_draft: DraftState, pick_number: int) -> float`**
   - Clone draft state and rewind to before the specified pick
   - Remove the originally drafted player from available pool
@@ -208,75 +207,59 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
   4. Return final ADP and convergence metrics
 
 ### 4.2 CLI Runner (`optimal_adp/main.py`)
-- [ ] Command-line interface for running optimization
-- [ ] Argument parsing for configuration overrides
-- [ ] Progress reporting and logging
+- [x] Command-line interface for running optimization
+- [x] Argument parsing for configuration overrides
+- [x] Progress reporting and logging
 
 ### 4.3 Tests for Phase 4
-- [ ] Integration test with small fixture dataset
-- [ ] Test full optimization loop convergence
-- [ ] Test output file generation
+- [x] Integration test with small fixture dataset
+- [x] Test full optimization loop convergence
+- [x] Test output file generation
 
-### 4.4 Definition of Done
+### 4.4 Validation Module (`optimal_adp/validation.py`)
+- [ ] **Main Validation Functions** accessible via CLI:
+  
+  **Primary Validation:**
+  - [ ] `validate_convergence()`: Test convergence with configurable learning rate (default 0.1)
+  - [ ] `validate_final_rankings()`: Check final rankings quality
+  - [ ] `validate_optimization()`: Main entry point combining all validations
+  - [ ] Track convergence metrics (position changes per iteration)
+  - [ ] Ensure no divergence or oscillation patterns
+  - [ ] **Optional perturbation testing**: parameter to randomly vary initial VBR rankings slightly
+  
+  **Final Rankings Quality Checks:**
+  - [ ] **Position hierarchy validation**: Same-position players ranked by AVG score (no inversions)
+  - [ ] **Elite positional players validation**: Top QB, top RB, and top WR all drafted in first round
+  - [ ] **No catastrophic inversions**: No clearly inferior players drafted before vastly superior ones
+  
+  **CLI Integration:**
+  - [ ] Add `validate` subcommand to main CLI
+  - [ ] Support `--perturb` flag for perturbation testing
+  - [ ] Support `--learning-rate` parameter for validation runs
+  - [ ] Simple pass/fail reporting with summary
+  
+  **Tests for Validation Module:**
+  - [ ] Test validation functions with known good/bad optimization results
+  - [ ] Test perturbation logic produces varied initial conditions
+  - [ ] Test position hierarchy validation catches violations
+  - [ ] Test elite player validation works correctly
+  - [ ] Test CLI integration for validation subcommand
+
+  **Success Criteria:**
+  - [ ] Validation module passes all checks with default parameters
+  - [ ] Convergence achieved within 1000 iterations
+  - [ ] No position hierarchy violations in final rankings
+  - [ ] Top QB, RB, and WR all land in first round (picks 1-10)
+
+### 4.5 Definition of Done
 ✅ **Phase 4 Complete When:**
-- [ ] All Phase 4.3 tests pass
-- [ ] >90% test coverage for Phase 4 modules
-- [ ] Pre-commit hooks pass (black, flake8, mypy)
-- [ ] Full optimization loop runs end-to-end with real data
-- [ ] CLI interface works with argument parsing
-- [ ] Convergence achieved within reasonable iterations
-- [ ] Progress reporting and logging functional
-
-## Phase 5: Artifacts & Output
-
-### 5.1 Directory Structure
-- [ ] Create `artifacts/` directory
-- [ ] Implement artifact file naming conventions:
-  - `artifacts/adp_round_k.csv`
-  - `artifacts/regret_by_pick_round_k.csv`
-  - `artifacts/convergence.json`
-
-### 5.2 Validation & Analysis
-- [ ] **Sanity check functions**:
-  - Verify top players are at top of draft board
-  - Verify ADP order matches AVG scores within positions
-  - Check that all roster constraints are satisfied
-- [ ] **Analysis utilities** (`optimal_adp/analysis.py`):
-  - Compare initial vs. final ADP rankings
-  - Identify biggest movers by position
-  - Generate summary statistics
-
-### 5.3 Definition of Done
-✅ **Phase 5 Complete When:**
-- [ ] >90% test coverage for Phase 5 modules
-- [ ] Pre-commit hooks pass (black, flake8, mypy)
-- [ ] All artifact files generate correctly with proper naming
-- [ ] Analysis utilities provide meaningful insights
-- [ ] Sanity checks validate optimization results
-- [ ] Full dataset optimization produces reasonable ADP changes
-
-## Phase 6: Code Quality & Documentation
-
-### 6.1 Code Quality
-- [ ] Add comprehensive docstrings (Python 3.10 style)
-- [ ] Type hints for all functions
-- [ ] Configure pre-commit hooks
-- [ ] Run black, flake8, mypy
-- [ ] Achieve >90% test coverage
-
-### 6.2 Documentation
-- [ ] Update README.md with usage instructions
-- [ ] Add examples of running the optimizer
-- [ ] Document configuration options
-- [ ] Add troubleshooting guide
-
-### 6.3 Definition of Done
-✅ **Phase 6 Complete When:**
-- [ ] >90% test coverage achieved
-- [ ] All code passes black, flake8, mypy checks
-- [ ] Pre-commit hooks configured and working
-- [ ] README.md has clear usage instructions with examples
-- [ ] All functions have comprehensive docstrings
+- [x] All Phase 4.3 tests pass
+- [x] >90% test coverage for Phase 4 modules
+- [x] Pre-commit hooks pass (black, flake8, mypy)
+- [x] Full optimization loop runs end-to-end with real data
+- [x] CLI interface works with argument parsing
+- [ ] **Validation module (4.4) passes all convergence and ranking quality checks**
+- [x] Progress reporting and logging functional
 
 ## Implementation Order Priority
 
@@ -308,14 +291,6 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
    - Write Phase 4.3 tests first (integration with small fixture)
    - Implement Phase 4.1 & 4.2 (Main Optimizer & CLI)
    - Validate tests pass and pre-commit hooks pass
-
-5. **Phase 5**: Artifacts & Output
-   - Implement artifact generation and analysis utilities
-   - Test with full dataset
-   - Validate pre-commit hooks pass
-
-6. **Phase 6**: Code Quality & Documentation
-   - Final polish, documentation, and comprehensive testing
 
 ## Notes
 - Follow test-first development: write tests for each module before implementation

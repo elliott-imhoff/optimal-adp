@@ -2,29 +2,66 @@
 
 import csv
 import logging
-from typing import Dict, List, Tuple
 
-from optimal_adp.config import NUM_TEAMS
+from optimal_adp.config import NUM_TEAMS, Player
 from optimal_adp.data_io import load_player_data, compute_initial_adp
 from optimal_adp.draft_simulator import simulate_full_draft
-from optimal_adp.regret_optimizer import (
+from optimal_adp.regret import (
     calculate_all_regrets,
-    update_adp_from_regret,
     rescale_adp_to_picks,
     check_convergence,
-    validate_position_hierarchy,
+    validate_position_hierarchy_detailed,
 )
 
 logger = logging.getLogger(__name__)
 
 
+def get_position_changes_detailed(
+    old_adp: dict[str, float], new_adp: dict[str, float], players: list[Player]
+) -> list[str]:
+    """Get detailed list of all position changes between iterations.
+
+    Args:
+        old_adp: Previous ADP values
+        new_adp: Current ADP values
+        players: List of all players for context
+
+    Returns:
+        List of strings describing position changes
+    """
+    changes = []
+    player_lookup = {player.name: player for player in players}
+
+    for player_name in old_adp:
+        if player_name in new_adp:
+            old_pos = int(round(old_adp[player_name]))
+            new_pos = int(round(new_adp[player_name]))
+
+            if old_pos != new_pos:
+                player = player_lookup.get(player_name)
+                position = player.position if player else "UNK"
+                avg = f"{player.avg:.1f}" if player else "N/A"
+
+                direction = "↑" if new_pos < old_pos else "↓"
+                move_size = abs(new_pos - old_pos)
+
+                changes.append(
+                    f"  {direction} {player_name} ({position}, AVG:{avg}): "
+                    f"ADP {old_pos} → {new_pos} ({move_size} spots)"
+                )
+
+    # Sort by magnitude of change (largest moves first)
+    changes.sort(key=lambda x: int(x.split("(")[-1].split(" spots")[0]), reverse=True)
+    return changes
+
+
 def optimize_adp(
     data_file_path: str,
     num_teams: int = NUM_TEAMS,
-    max_iterations: int = 50,
+    max_iterations: int = 1000,
     learning_rate: float = 0.1,
     output_file_path: str = "artifacts/final_adp.csv",
-) -> Tuple[Dict[str, float], List[int], int]:
+) -> tuple[dict[str, float], list[int], int]:
     """Optimize ADP values using regret minimization.
 
     Iteratively optimizes ADP values using regret minimization until convergence
@@ -92,7 +129,7 @@ def optimize_adp(
         writer.writerows(initial_adp_players)
 
     # Track convergence history
-    convergence_history: List[int] = []
+    convergence_history: list[int] = []
     iterations_completed = 0
 
     # Step 3: Main optimization loop
@@ -110,28 +147,56 @@ def optimize_adp(
         player_regrets = calculate_all_regrets(draft_state)
         logger.debug(f"Regret calculated for {len(player_regrets)} players")
 
-        # 3c: Update ADP with regret scores
+        # 3c: Update ADP with regret scores (with hierarchy constraints)
         logger.debug("Updating ADP from regret scores")
-        updated_adp = update_adp_from_regret(current_adp, player_regrets, learning_rate)
+        from .regret import update_adp_from_regret_constrained
+
+        updated_adp = update_adp_from_regret_constrained(
+            current_adp, player_regrets, learning_rate, all_players
+        )
 
         # 3d: Rescale to valid pick numbers
         logger.debug("Rescaling ADP to valid pick numbers")
         current_adp = rescale_adp_to_picks(updated_adp)
 
-        # 3e: Validate position hierarchy
-        hierarchy_valid = validate_position_hierarchy(current_adp, all_players)
+        # 3e: Validate position hierarchy after each iteration
+        hierarchy_valid, violations = validate_position_hierarchy_detailed(
+            current_adp, all_players
+        )
         if not hierarchy_valid:
             logger.warning(
-                f"Position hierarchy validation failed at iteration {iteration + 1}"
+                f"Position hierarchy validation failed at iteration {iteration + 1} "
+                f"({len(violations)} violations)"
+            )
+            # Log first few violations for debugging
+            for i, violation in enumerate(violations[:3]):
+                logger.warning(f"  Violation {i+1}: {violation}")
+            if len(violations) > 3:
+                logger.warning(f"  ... and {len(violations) - 3} more violations")
+        else:
+            logger.info(
+                f"Position hierarchy validation passed at iteration {iteration + 1}"
             )
 
         iterations_completed = iteration + 1
 
-        # 3f: Check convergence every iteration
+        # 3f: Check convergence and show detailed position changes
         position_changes = check_convergence(iteration_start_adp, current_adp)
         convergence_history.append(position_changes)
 
         logger.info(f"Iteration {iteration + 1}: {position_changes} position changes")
+
+        # Show detailed position changes if any occurred
+        if position_changes > 0:
+            detailed_changes = get_position_changes_detailed(
+                iteration_start_adp, current_adp, all_players
+            )
+            if detailed_changes:
+                logger.info(f"Position changes in iteration {iteration + 1}:")
+                for change in detailed_changes[:10]:  # Show up to 10 largest changes
+                    logger.info(change)
+                if len(detailed_changes) > 10:
+                    logger.info(f"  ... and {len(detailed_changes) - 10} more changes")
 
         if position_changes == 0:
             logger.info(f"Convergence achieved at iteration {iteration + 1}")

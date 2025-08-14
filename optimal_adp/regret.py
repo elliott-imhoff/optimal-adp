@@ -1,62 +1,11 @@
 """Regret calculation and ADP optimization for fantasy football drafts."""
 
 import logging
-from typing import Dict
 
 from .config import Player
 from .draft_simulator import DraftState, simulate_from_pick
 
 logger = logging.getLogger(__name__)
-
-
-def _check_position_hierarchy_violation(
-    draft_state: DraftState, pick_number: int, drafted_player: Player
-) -> float | None:
-    """Check if a pick violated position hierarchy constraints.
-
-    A violation occurs when a player was drafted while a same-position player
-    with higher AVG was still available on the draft board.
-
-    Args:
-        draft_state: Complete draft state
-        pick_number: Pick number to check (0-based)
-        drafted_player: Player that was drafted at this pick
-
-    Returns:
-        High regret score if hierarchy was violated, None otherwise
-    """
-    # Get the state of the draft board just before this pick
-    cloned_draft = draft_state.clone()
-    pre_pick_state = cloned_draft.rewind_to_pick(pick_number)
-
-    # Find all available players of the same position with higher AVG
-    available_better_players = []
-    for player in pre_pick_state.draft_board.available_players:
-        if (
-            player.name not in pre_pick_state.draft_board.drafted_players
-            and player.position == drafted_player.position
-            and player.avg > drafted_player.avg
-        ):
-            available_better_players.append(player)
-
-    if available_better_players:
-        # Calculate high regret based on the difference in average scores
-        best_available_avg = max(p.avg for p in available_better_players)
-        avg_difference = best_available_avg - drafted_player.avg
-
-        # Return a high regret score proportional to the missed opportunity
-        # Use a multiplier to ensure this significantly penalizes hierarchy violations
-        hierarchy_violation_regret = avg_difference * 10.0  # Multiplier for emphasis
-
-        logger.debug(
-            f"Hierarchy violation: {drafted_player.name} (AVG: {drafted_player.avg}) "
-            f"drafted while {len(available_better_players)} better players available "
-            f"(best AVG: {best_available_avg})"
-        )
-
-        return hierarchy_violation_regret
-
-    return None
 
 
 def calculate_pick_regret(original_draft: DraftState, pick_number: int) -> float:
@@ -93,20 +42,6 @@ def calculate_pick_regret(original_draft: DraftState, pick_number: int) -> float
     # Get original team score
     original_score = original_team.calculate_total_score()
 
-    # Check position hierarchy constraint first
-    # If a better same-position player was available, assign high regret
-    hierarchy_violation_regret = _check_position_hierarchy_violation(
-        original_draft, pick_number, original_pick_player
-    )
-
-    if hierarchy_violation_regret is not None:
-        logger.debug(
-            f"Position hierarchy violation for pick {pick_number}: "
-            f"{original_pick_player.name} - assigning high regret "
-            f"{hierarchy_violation_regret:.2f}"
-        )
-        return hierarchy_violation_regret
-
     # Create counterfactual scenario:
     # 1. Clone original draft to avoid modifying it
     cloned_draft = original_draft.clone()
@@ -135,7 +70,7 @@ def calculate_pick_regret(original_draft: DraftState, pick_number: int) -> float
     return regret
 
 
-def calculate_all_regrets(draft_state: DraftState) -> Dict[str, float]:
+def calculate_all_regrets(draft_state: DraftState) -> dict[str, float]:
     """Calculate regret scores for all picks in the completed draft.
 
     Args:
@@ -161,10 +96,10 @@ def calculate_all_regrets(draft_state: DraftState) -> Dict[str, float]:
 
 
 def update_adp_from_regret(
-    current_adp: Dict[str, float],
-    player_regrets: Dict[str, float],
+    current_adp: dict[str, float],
+    player_regrets: dict[str, float],
     learning_rate: float,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Apply ADP update using raw regret scores directly.
 
     New_ADP = Old_ADP + η × regret_score
@@ -195,7 +130,85 @@ def update_adp_from_regret(
     return updated_adp
 
 
-def rescale_adp_to_picks(updated_adp: Dict[str, float]) -> Dict[str, float]:
+def update_adp_from_regret_constrained(
+    current_adp: dict[str, float],
+    player_regrets: dict[str, float],
+    learning_rate: float,
+    all_players: list[Player],
+) -> dict[str, float]:
+    """Apply ADP update with position hierarchy constraints.
+
+    Updates ADP while ensuring players with higher AVG within the same position
+    maintain earlier (lower) ADP values by swapping violators.
+
+    Args:
+        current_adp: Current ADP values for all players
+        player_regrets: Raw regret scores (in fantasy points)
+        learning_rate: Learning rate η (e.g., 0.5)
+        all_players: All players with their stats for hierarchy constraints
+
+    Returns:
+        Updated ADP values that respect position hierarchy
+    """
+    # First, apply unconstrained updates
+    updated_adp = current_adp.copy()
+
+    for player_name in player_regrets:
+        if player_name in current_adp:
+            old_adp = current_adp[player_name]
+            regret_adjustment = learning_rate * player_regrets[player_name]
+            new_adp = old_adp + regret_adjustment
+            updated_adp[player_name] = new_adp
+
+    # Create player lookup for constraints
+    player_lookup = {p.name: p for p in all_players}
+
+    # Find and fix hierarchy violations by swapping ADP values
+    swaps_made = 0
+    for player1_name in updated_adp:
+        if player1_name not in player_lookup:
+            continue
+
+        player1 = player_lookup[player1_name]
+        player1_adp = updated_adp[player1_name]
+
+        for player2_name in updated_adp:
+            if player2_name not in player_lookup or player1_name == player2_name:
+                continue
+
+            player2 = player_lookup[player2_name]
+            player2_adp = updated_adp[player2_name]
+
+            # Check if same position and hierarchy violation exists
+            should_swap = False
+            if player1.position == player2.position and player1_adp > player2_adp:
+                if player1.avg > player2.avg:
+                    # Higher AVG should have earlier ADP
+                    should_swap = True
+                elif player1.avg == player2.avg and player1_name < player2_name:
+                    # Tie-breaker: alphabetically earlier name should have earlier ADP
+                    should_swap = True
+
+            if should_swap:
+                # Swap their ADP values
+                updated_adp[player1_name] = player2_adp
+                updated_adp[player2_name] = player1_adp
+                swaps_made += 1
+
+                tie_breaker = " (tie-breaker)" if player1.avg == player2.avg else ""
+                logger.debug(
+                    f"Hierarchy fix: Swapped {player1_name} (AVG: {player1.avg:.1f}) "
+                    f"and {player2_name} (AVG: {player2.avg:.1f}){tie_breaker} - "
+                    f"ADPs: {player1_adp:.2f} ↔ {player2_adp:.2f}"
+                )
+
+    if swaps_made > 0:
+        logger.debug(f"Made {swaps_made} ADP swaps to maintain position hierarchy")
+
+    return updated_adp
+
+
+def rescale_adp_to_picks(updated_adp: dict[str, float]) -> dict[str, float]:
     """Rescale ADP values to valid pick positions (1, 2, 3, ...).
 
     Sort all players by updated ADP values and assign sequential pick numbers.
@@ -226,7 +239,7 @@ def rescale_adp_to_picks(updated_adp: Dict[str, float]) -> Dict[str, float]:
 
 
 def validate_position_hierarchy(
-    updated_adp: Dict[str, float], players: list[Player]
+    updated_adp: dict[str, float], players: list[Player]
 ) -> bool:
     """Validate that position hierarchy is maintained after ADP update.
 
@@ -273,8 +286,59 @@ def validate_position_hierarchy(
     return is_valid
 
 
+def validate_position_hierarchy_detailed(
+    updated_adp: dict[str, float], players: list[Player]
+) -> tuple[bool, list[str]]:
+    """Validate position hierarchy and return detailed violation list.
+
+    Within each position, players with higher AVG should have lower (earlier) ADP.
+
+    Args:
+        updated_adp: Updated ADP values to validate
+        players: List of all players with their stats
+
+    Returns:
+        Tuple of (is_valid, list_of_violations)
+    """
+    # Group players by position
+    by_position: dict[str, list[Player]] = {}
+    for player in players:
+        if player.name in updated_adp:
+            if player.position not in by_position:
+                by_position[player.position] = []
+            by_position[player.position].append(player)
+
+    # Check hierarchy within each position
+    violations: list[str] = []
+    for position, position_players in by_position.items():
+        # Sort by ADP (earlier picks first)
+        sorted_by_adp = sorted(position_players, key=lambda p: updated_adp[p.name])
+
+        # Check that AVG scores are in descending order
+        prev_player: Player | None = None
+        for player in sorted_by_adp:
+            if prev_player is not None and player.avg > prev_player.avg:
+                violation_msg = (
+                    f"{position}: {prev_player.name} (AVG: {prev_player.avg:.1f}, "
+                    f"ADP: {updated_adp[prev_player.name]:.1f}) ranked before "
+                    f"{player.name} (AVG: {player.avg:.1f}, "
+                    f"ADP: {updated_adp[player.name]:.1f})"
+                )
+                violations.append(violation_msg)
+                logger.warning(f"Position hierarchy violation: {violation_msg}")
+            prev_player = player
+
+    is_valid = len(violations) == 0
+    if is_valid:
+        logger.debug("Position hierarchy validation passed")
+    else:
+        logger.warning(f"Position hierarchy violations: {len(violations)}")
+
+    return is_valid, violations
+
+
 def check_convergence(
-    initial_adp: Dict[str, float], final_adp: Dict[str, float]
+    initial_adp: dict[str, float], final_adp: dict[str, float]
 ) -> int:
     """Check convergence by counting total position moves between initial and final ADP.
 
