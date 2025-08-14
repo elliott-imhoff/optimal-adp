@@ -9,7 +9,6 @@ from optimal_adp.regret import (
     calculate_all_regrets,
     update_adp_from_regret_constrained,
     rescale_adp_to_picks,
-    validate_position_hierarchy,
     check_convergence,
 )
 
@@ -453,47 +452,6 @@ class TestRescaleAdpToPicks:
 
         # Order should be A (1.0), C (1.5), B (2.0)
         assert rescaled["A"] < rescaled["C"] < rescaled["B"]
-
-
-class TestValidatePositionHierarchy:
-    """Tests for validate_position_hierarchy function."""
-
-    def test_valid_hierarchy(self, sample_players: list[Player]) -> None:
-        """Test validation when hierarchy is maintained."""
-        # QB1 (25.0 avg) has ADP 1, QB2 (20.0 avg) has ADP 2
-        valid_adp = {
-            "QB1": 1.0,
-            "QB2": 2.0,
-            "RB1": 3.0,
-            "RB2": 4.0,
-        }
-
-        is_valid = validate_position_hierarchy(valid_adp, sample_players)
-        assert is_valid is True
-
-    def test_invalid_hierarchy(self, sample_players: list[Player]) -> None:
-        """Test validation when hierarchy is violated."""
-        # QB2 (20.0 avg) has earlier ADP than QB1 (25.0 avg) - violation!
-        invalid_adp = {
-            "QB1": 2.0,  # Lower avg but later pick
-            "QB2": 1.0,  # Higher avg but earlier pick
-            "RB1": 3.0,
-            "RB2": 4.0,
-        }
-
-        is_valid = validate_position_hierarchy(invalid_adp, sample_players)
-        assert is_valid is False
-
-    def test_players_not_in_adp_ignored(self, sample_players: list[Player]) -> None:
-        """Test that players not in ADP dict are ignored."""
-        partial_adp = {
-            "QB1": 1.0,  # Only include some players
-            "RB1": 2.0,
-        }
-
-        # Should not crash and should validate the included players
-        is_valid = validate_position_hierarchy(partial_adp, sample_players)
-        assert is_valid is True
 
 
 class TestCheckConvergence:

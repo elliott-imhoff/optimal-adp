@@ -11,7 +11,7 @@ import pytest
 
 from optimal_adp.data_io import load_player_data, compute_initial_adp
 from optimal_adp.main import setup_logging
-from optimal_adp.optimizer import optimize_adp, run_optimization_with_validation_and_io
+from optimal_adp.optimizer import optimize_adp, run_optimization_loop
 from optimal_adp.models import Player
 
 
@@ -42,7 +42,7 @@ class TestRunOptimizationWithValidationAndIO:
 
                 os.chdir(temp_dir)
 
-                result = run_optimization_with_validation_and_io(
+                result = run_optimization_loop(
                     data_file_path=temp_data_file,
                     learning_rate=0.1,
                     max_iterations=10,  # Small for testing
@@ -93,7 +93,7 @@ class TestRunOptimizationWithValidationAndIO:
     def test_optimization_without_artifacts(self, temp_data_file: str) -> None:
         """Test optimization run without artifact generation."""
         try:
-            result = run_optimization_with_validation_and_io(
+            result = run_optimization_loop(
                 data_file_path=temp_data_file,
                 learning_rate=0.1,
                 max_iterations=5,  # Small for testing
@@ -112,7 +112,7 @@ class TestRunOptimizationWithValidationAndIO:
     def test_optimization_with_perturbation(self, temp_data_file: str) -> None:
         """Test optimization with ADP perturbation enabled."""
         try:
-            result = run_optimization_with_validation_and_io(
+            result = run_optimization_loop(
                 data_file_path=temp_data_file,
                 learning_rate=0.2,
                 max_iterations=5,
@@ -130,7 +130,7 @@ class TestRunOptimizationWithValidationAndIO:
 
     def test_optimization_with_invalid_file_path(self) -> None:
         """Test optimization with non-existent data file."""
-        result = run_optimization_with_validation_and_io(
+        result = run_optimization_loop(
             data_file_path="/non/existent/file.csv",
             learning_rate=0.1,
             max_iterations=10,
@@ -149,7 +149,7 @@ class TestRunOptimizationWithValidationAndIO:
             temp_path = f.name
 
         try:
-            result = run_optimization_with_validation_and_io(
+            result = run_optimization_loop(
                 data_file_path=temp_path,
                 learning_rate=0.1,
                 max_iterations=10,
@@ -165,7 +165,7 @@ class TestRunOptimizationWithValidationAndIO:
     def test_default_parameters(self, temp_data_file: str) -> None:
         """Test optimization with default parameters."""
         try:
-            result = run_optimization_with_validation_and_io(
+            result = run_optimization_loop(
                 data_file_path=temp_data_file,
                 artifacts_outputs=False,
             )
@@ -185,7 +185,7 @@ class TestRunOptimizationWithValidationAndIO:
         mock_optimize.side_effect = RuntimeError("Simulated optimization failure")
 
         try:
-            result = run_optimization_with_validation_and_io(
+            result = run_optimization_loop(
                 data_file_path=temp_data_file,
                 artifacts_outputs=False,
             )
@@ -208,7 +208,7 @@ class TestRunOptimizationWithValidationAndIO:
         mock_validate.return_value = mock_result
 
         try:
-            result = run_optimization_with_validation_and_io(
+            result = run_optimization_loop(
                 data_file_path=temp_data_file,
                 artifacts_outputs=False,
             )
@@ -228,7 +228,7 @@ class TestRunOptimizationWithValidationAndIO:
             temp_path = f.name
 
         try:
-            result = run_optimization_with_validation_and_io(
+            result = run_optimization_loop(
                 data_file_path=temp_path,
                 learning_rate=0.1,
                 max_iterations=5,
@@ -246,7 +246,7 @@ class TestRunOptimizationWithValidationAndIO:
         """Test optimization with extreme parameter values."""
         try:
             # Test with very high learning rate and low iterations
-            result = run_optimization_with_validation_and_io(
+            result = run_optimization_loop(
                 data_file_path=temp_data_file,
                 learning_rate=1.0,  # Very high
                 max_iterations=1,  # Very low
@@ -269,7 +269,7 @@ class TestRunOptimizationWithValidationAndIO:
 
                 os.chdir(temp_dir)
 
-                _ = run_optimization_with_validation_and_io(
+                _ = run_optimization_loop(
                     data_file_path=temp_data_file,
                     learning_rate=0.1,
                     max_iterations=3,

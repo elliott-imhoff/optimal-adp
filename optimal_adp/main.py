@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
-from optimal_adp.optimizer import run_optimization_with_validation_and_io
+from optimal_adp.optimizer import run_optimization_loop
 
 
 # ANSI color codes
@@ -85,7 +85,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Run validation
-    success = run_optimization_with_validation_and_io(
+    success = run_optimization_loop(
         data_file_path=str(data_file_path),
         learning_rate=args.learning_rate,
         max_iterations=args.max_iterations,

@@ -1,6 +1,5 @@
 """Tests for the validation module."""
 
-import random
 import tempfile
 import pytest
 
@@ -8,7 +7,6 @@ from optimal_adp.config import NUM_TEAMS
 from optimal_adp.models import Player
 from optimal_adp.validation import (
     ValidationResult,
-    perturb_initial_adp,
     validate_position_hierarchy,
     validate_elite_players_first_round,
     validate_optimization_results,
@@ -49,60 +47,6 @@ class TestValidationResult:
         assert result.passed is True
         assert len(result.messages) == 1
         assert "ℹ️  Test info" in result.messages[0]
-
-
-class TestPerturbInitialAdp:
-    """Tests for perturb_initial_adp function."""
-
-    def test_perturb_maintains_structure(self) -> None:
-        """Test perturbation maintains the data structure."""
-        # Create test data
-        players = [
-            Player("Player1", "QB", "TEAM1", 25.0, 400.0),
-            Player("Player2", "RB", "TEAM2", 20.0, 300.0),
-            Player("Player3", "WR", "TEAM3", 15.0, 200.0),
-        ]
-        initial_data = [(players[i], float(i * 5), i + 1) for i in range(3)]
-
-        # Perturb
-        perturbed = perturb_initial_adp(initial_data, perturbation_factor=0.1)
-
-        # Check structure maintained
-        assert len(perturbed) == len(initial_data)
-        for player, vbr, adp in perturbed:
-            assert isinstance(player, Player)
-            assert isinstance(vbr, float)
-            assert isinstance(adp, int)
-            assert adp >= 1.0  # ADP should stay positive
-
-    def test_perturb_changes_values(self) -> None:
-        """Test perturbation actually changes ADP values."""
-        # Create test data with fixed random seed for reproducibility
-
-        random.seed(42)
-
-        players = [Player("Player1", "QB", "TEAM1", 25.0, 400.0)]
-        # Use larger ADP value so perturbation is more likely to change the rounded result
-        initial_data = [(players[0], 10.0, 10)]
-
-        # Perturb
-        perturbed = perturb_initial_adp(initial_data, perturbation_factor=0.2)
-
-        # Should be different (with high probability for larger values)
-        original_adp = initial_data[0][2]
-        perturbed_adp = perturbed[0][2]
-        # Note: This might occasionally fail due to random chance, but very unlikely
-        assert perturbed_adp != original_adp
-
-    def test_perturb_zero_factor_no_change(self) -> None:
-        """Test zero perturbation factor produces no change."""
-        players = [Player("Player1", "QB", "TEAM1", 25.0, 400.0)]
-        initial_data = [(players[0], 10.0, 5)]
-
-        perturbed = perturb_initial_adp(initial_data, perturbation_factor=0.0)
-
-        # Should be identical
-        assert perturbed[0][2] == initial_data[0][2]
 
 
 class TestValidatePositionHierarchy:
@@ -150,6 +94,26 @@ class TestValidatePositionHierarchy:
     def test_empty_players(self) -> None:
         """Test validation with no players."""
         is_valid, violations = validate_position_hierarchy({}, [])
+        assert is_valid is True
+        assert len(violations) == 0
+
+    def test_players_not_in_adp_ignored(self) -> None:
+        """Test that players not in ADP dict are ignored."""
+        players = [
+            Player("QB1", "QB", "TEAM1", 25.0, 400.0),
+            Player("QB2", "QB", "TEAM2", 20.0, 300.0),
+            Player("RB1", "RB", "TEAM3", 22.0, 350.0),
+            Player("RB2", "RB", "TEAM4", 18.0, 250.0),
+        ]
+
+        # Only include some players in ADP
+        partial_adp = {
+            "QB1": 1.0,  # Only include some players
+            "RB1": 2.0,
+        }
+
+        # Should not crash and should validate the included players
+        is_valid, violations = validate_position_hierarchy(partial_adp, players)
         assert is_valid is True
         assert len(violations) == 0
 

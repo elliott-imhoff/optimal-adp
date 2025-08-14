@@ -3,6 +3,7 @@
 import csv
 import tempfile
 from pathlib import Path
+import random
 
 import pytest
 
@@ -19,6 +20,7 @@ from optimal_adp.data_io import (
     save_regrets_csv,
     save_run_parameters_txt,
     save_team_scores_csv,
+    perturb_initial_adp,
 )
 from optimal_adp.models import DraftState, Player
 
@@ -249,6 +251,60 @@ def test_player_filtering() -> None:
     assert "Valid Player" in names
     assert "Some Kicker" not in names
     assert "Injured Player" not in names
+
+
+class TestPerturbInitialAdp:
+    """Tests for perturb_initial_adp function."""
+
+    def test_perturb_maintains_structure(self) -> None:
+        """Test perturbation maintains the data structure."""
+        # Create test data
+        players = [
+            Player("Player1", "QB", "TEAM1", 25.0, 400.0),
+            Player("Player2", "RB", "TEAM2", 20.0, 300.0),
+            Player("Player3", "WR", "TEAM3", 15.0, 200.0),
+        ]
+        initial_data = [(players[i], float(i * 5), i + 1) for i in range(3)]
+
+        # Perturb
+        perturbed = perturb_initial_adp(initial_data, perturbation_factor=0.1)
+
+        # Check structure maintained
+        assert len(perturbed) == len(initial_data)
+        for player, vbr, adp in perturbed:
+            assert isinstance(player, Player)
+            assert isinstance(vbr, float)
+            assert isinstance(adp, int)
+            assert adp >= 1.0  # ADP should stay positive
+
+    def test_perturb_changes_values(self) -> None:
+        """Test perturbation actually changes ADP values."""
+        # Create test data with fixed random seed for reproducibility
+
+        random.seed(42)
+
+        players = [Player("Player1", "QB", "TEAM1", 25.0, 400.0)]
+        # Use larger ADP value so perturbation is more likely to change the rounded result
+        initial_data = [(players[0], 10.0, 10)]
+
+        # Perturb
+        perturbed = perturb_initial_adp(initial_data, perturbation_factor=0.2)
+
+        # Should be different (with high probability for larger values)
+        original_adp = initial_data[0][2]
+        perturbed_adp = perturbed[0][2]
+        # Note: This might occasionally fail due to random chance, but very unlikely
+        assert perturbed_adp != original_adp
+
+    def test_perturb_zero_factor_no_change(self) -> None:
+        """Test zero perturbation factor produces no change."""
+        players = [Player("Player1", "QB", "TEAM1", 25.0, 400.0)]
+        initial_data = [(players[0], 10.0, 5)]
+
+        perturbed = perturb_initial_adp(initial_data, perturbation_factor=0.0)
+
+        # Should be identical
+        assert perturbed[0][2] == initial_data[0][2]
 
 
 class TestArtifactsFunctions:

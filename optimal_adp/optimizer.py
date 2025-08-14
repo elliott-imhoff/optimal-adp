@@ -13,18 +13,18 @@ from optimal_adp.data_io import (
     save_regrets_csv,
     save_run_parameters_txt,
     save_team_scores_csv,
+    perturb_initial_adp,
 )
 from optimal_adp.models import simulate_full_draft, DraftState, Player
 from optimal_adp.regret import (
     calculate_all_regrets,
     rescale_adp_to_picks,
     check_convergence,
-    validate_position_hierarchy_detailed,
     update_adp_from_regret_constrained,
 )
 from optimal_adp.validation import (
-    perturb_initial_adp,
     validate_optimization_results,
+    validate_position_hierarchy,
 )
 
 logger = logging.getLogger(__name__)
@@ -141,7 +141,7 @@ def optimize_adp(
         current_adp = rescale_adp_to_picks(updated_adp)
 
         # 3e: Validate position hierarchy after each iteration
-        hierarchy_valid, violations = validate_position_hierarchy_detailed(
+        hierarchy_valid, violations = validate_position_hierarchy(
             current_adp, all_players
         )
         if not hierarchy_valid:
@@ -196,7 +196,7 @@ def optimize_adp(
     )
 
 
-def run_optimization_with_validation_and_io(
+def run_optimization_loop(
     data_file_path: str,
     learning_rate: float = 0.1,
     max_iterations: int = 1000,

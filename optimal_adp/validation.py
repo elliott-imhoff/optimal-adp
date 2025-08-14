@@ -1,7 +1,6 @@
 """Validation functions to verify optimization results without I/O operations."""
 
 import logging
-import random
 from pathlib import Path
 
 from optimal_adp.config import NUM_TEAMS
@@ -50,46 +49,19 @@ class ValidationResult:
         self.messages.extend(other.messages)
 
 
-def perturb_initial_adp(
-    initial_adp_data: list[tuple[Player, float, int]],
-    perturbation_factor: float = 0.1,
-) -> list[tuple[Player, float, int]]:
-    """Randomly perturb initial ADP values slightly.
-
-    Args:
-        initial_adp_data: List of (player, vbr, adp) tuples
-        perturbation_factor: Maximum relative change to apply (0.1 = 10%)
-
-    Returns:
-        Perturbed initial ADP data with same structure
-    """
-    if perturbation_factor == 0.0:
-        # No perturbation - return copy of original
-        return list(initial_adp_data)
-
-    perturbed = []
-    for player, vbr, adp in initial_adp_data:
-        # Apply random perturbation to ADP value
-        perturbation = random.uniform(-perturbation_factor, perturbation_factor)
-        new_adp = adp * (1 + perturbation)
-        # Ensure ADP stays positive and convert back to int
-        new_adp = max(1, round(new_adp))
-        perturbed.append((player, vbr, new_adp))
-
-    # Re-sort by new ADP values to maintain relative order
-    perturbed.sort(key=lambda x: x[2])
-
-    return perturbed
-
-
 def validate_position_hierarchy(
-    final_adp: dict[str, float], players: list[Player]
+    final_adp: dict[str, float], players: list[Player], detailed: bool = True
 ) -> tuple[bool, list[str]]:
     """Validate that same-position players are ranked by AVG score.
+
+    Within each position, players with higher AVG should have lower (earlier) ADP.
+    This is the consolidated function that replaces overlapping implementations
+    from regret and validation modules.
 
     Args:
         final_adp: Final ADP values mapping player names to pick numbers
         players: List of all players with stats
+        detailed: If True, return detailed violation messages; if False, just log count
 
     Returns:
         Tuple of (is_valid, list_of_violations)
@@ -106,7 +78,7 @@ def validate_position_hierarchy(
 
     # Check hierarchy within each position
     for position, position_players in players_by_position.items():
-        # Sort by ADP (lower = better)
+        # Sort by ADP (lower = better/earlier)
         position_players.sort(key=lambda p: final_adp[p.name])
 
         # Check that AVG scores are in descending order
@@ -115,14 +87,23 @@ def validate_position_hierarchy(
             next_player = position_players[i + 1]
 
             if current_player.avg < next_player.avg:
-                violations.append(
+                violation_msg = (
                     f"{position}: {current_player.name} (AVG: {current_player.avg:.1f}, "
                     f"ADP: {final_adp[current_player.name]:.1f}) ranked before "
                     f"{next_player.name} (AVG: {next_player.avg:.1f}, "
                     f"ADP: {final_adp[next_player.name]:.1f})"
                 )
+                violations.append(violation_msg)
+                if detailed:
+                    logger.warning(f"Position hierarchy violation: {violation_msg}")
 
-    return len(violations) == 0, violations
+    is_valid = len(violations) == 0
+    if is_valid:
+        logger.debug("Position hierarchy validation passed")
+    elif not detailed:
+        logger.warning(f"Position hierarchy violations: {len(violations)}")
+
+    return is_valid, violations
 
 
 def validate_elite_players_first_round(

@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import random
 
 from .config import BASELINE_POSITIONS
 from .models import DraftState, Player
@@ -156,6 +157,38 @@ def compute_initial_adp(
         result.append((player, vbr, i + 1))
 
     return result
+
+
+def perturb_initial_adp(
+    initial_adp_data: list[tuple[Player, float, int]],
+    perturbation_factor: float = 0.1,
+) -> list[tuple[Player, float, int]]:
+    """Randomly perturb initial ADP values slightly.
+
+    Args:
+        initial_adp_data: List of (player, vbr, adp) tuples
+        perturbation_factor: Maximum relative change to apply (0.1 = 10%)
+
+    Returns:
+        Perturbed initial ADP data with same structure
+    """
+    if perturbation_factor == 0.0:
+        # No perturbation - return copy of original
+        return list(initial_adp_data)
+
+    perturbed = []
+    for player, vbr, adp in initial_adp_data:
+        # Apply random perturbation to ADP value
+        perturbation = random.uniform(-perturbation_factor, perturbation_factor)
+        new_adp = adp * (1 + perturbation)
+        # Ensure ADP stays positive and convert back to int
+        new_adp = max(1, round(new_adp))
+        perturbed.append((player, vbr, new_adp))
+
+    # Re-sort by new ADP values to maintain relative order
+    perturbed.sort(key=lambda x: x[2])
+
+    return perturbed
 
 
 def save_adp_results(
