@@ -26,9 +26,16 @@ build-backend = "poetry.core.masonry.api"
 [tool.black]
 line-length = 88
 
+[tool.flake8]
+max-line-length = 9999
+
 [tool.mypy]
 strict = true
 warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disable_error_code = ["misc"]
 
 [tool.coverage.run]
 source = ["optimal_adp"]

@@ -134,63 +134,64 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
 - [x] Team rosters properly enforce position limits and FLEX rules
 - [x] Greedy algorithm consistently picks lowest ADP eligible player
 
-## Phase 3: Regret Calculation & ADP Updates (Combined)
+## Phase 3: Regret Calculation & ADP Updates (Combined) ✅
 
 ### 3.1 Regret Calculation (`optimal_adp/regret_optimizer.py`)
-- [ ] **`calculate_pick_regret(original_draft: DraftState, pick_number: int) -> float`**
+- [x] **`calculate_pick_regret(original_draft: DraftState, pick_number: int) -> float`**
   - Clone draft state and rewind to before the specified pick
   - Remove the originally drafted player from available pool
   - Simulate draft forward from that pick using greedy algorithm (will pick different position than original)
   - Compare team scores: regret = counterfactual_score - original_score
   - **Position hierarchy constraint**: If a player was drafted when a same-position player with higher AVG was still available on the draft board, assign high regret score to prevent worse players being picked before better ones
 
-- [ ] **`calculate_all_regrets(draft_state: DraftState) -> Dict[str, float]`**
+- [x] **`calculate_all_regrets(draft_state: DraftState) -> Dict[str, float]`**
   - Compute regret for every pick in the draft (picks 0-99)
   - Return mapping of player_name -> regret_score (since each player drafted only once)
 
 ### 3.2 ADP Update Logic
-- [ ] **`normalize_regret_scores(player_regrets: Dict[str, float]) -> Dict[str, float]`**
-  - Convert raw regret scores to normalized ranks (0-1 scale)
-  - Lower regret → higher rank → earlier ADP
+- [x] **`update_adp_from_regret(current_adp: Dict[str, float], player_regrets: Dict[str, float], learning_rate: float) -> Dict[str, float]`**
+  - Apply: New_ADP = Old_ADP + η × regret_score (use raw regret directly)
+  - Higher regret → later pick (higher ADP number)
+  - No normalization - let raw regret magnitudes drive the changes
 
-- [ ] **`update_adp_raw(current_adp: Dict[str, float], normalized_regrets: Dict[str, float], learning_rate: float) -> Dict[str, float]`**
-  - Apply: New_ADP = Old_ADP - η × normalized_regret_rank
-  - Initial result may be outside valid range
-
-- [ ] **`rescale_adp_to_picks(updated_adp: Dict[str, float]) -> Dict[str, float]`**
+- [x] **`rescale_adp_to_picks(updated_adp: Dict[str, float]) -> Dict[str, float]`**
   - Sort all players by updated ADP values (lower = better)
   - Assign ADP as their rank position: 1st best gets ADP=1, 2nd gets ADP=2, etc.
   - Maintains relative ordering for all players, including those beyond pick 100
   - Example: 200 players total → ADPs from 1 to 200, even though only top 100 are draftable
 
-- [ ] **`validate_position_hierarchy(updated_adp: Dict[str, float], players: List[Player]) -> bool`**
+- [x] **`validate_position_hierarchy(updated_adp: Dict[str, float], players: List[Player]) -> bool`**
   - Validate that within each position, higher AVG players still have lower ADP
   - Return True if hierarchy is maintained, False if violated
   - Use for debugging/validation only - hierarchy should be enforced in regret calculation
 
-- [ ] **`check_convergence(adp_history: List[Dict[str, float]], threshold: float = 0.25, consecutive_rounds: int = 3) -> bool`**
-  - Check if max |ADP change| < threshold for M consecutive iterations
-  - Return True if converged, False otherwise
+- [x] **`check_convergence(initial_adp: Dict[str, float], final_adp: Dict[str, float]) -> int`**
+  - Calculate total magnitude of position changes across all players between initial (pre-update) and final (post-regret-update + rescaling) ADP
+  - Return position_changes_count where 0 means converged
+  - Example: Player moving from rank 21→23 contributes 2, player 5→5 contributes 0
+  - Log the position_changes_count each iteration to track convergence progress
+  - Optimization is complete when position_changes_count reaches 0 (or max_iterations reached)
 
 ### 3.3 Tests for Phase 3
-- [ ] Test regret calculation with simple 2-team, 4-pick scenarios
-- [ ] Test counterfactual simulation logic
-- [ ] Test ADP update calculations with known regret inputs
-- [ ] Test ADP rescaling maintains relative order for all players (including undrafted)
-- [ ] Test that undrafted players still have meaningful relative rankings
-- [ ] Test position hierarchy validation function
-- [ ] Test convergence detection with various ADP change patterns
-- [ ] Test that regret calculation assigns max regret when a player is drafted while a better same-position player (higher AVG) was still available
+- [x] Test regret calculation with simple 2-team, 4-pick scenarios
+- [x] Test counterfactual simulation logic
+- [x] Test ADP update calculations with raw regret inputs (no normalization)
+- [x] Test ADP rescaling maintains relative order for all players (including undrafted)
+- [x] Test that undrafted players still have meaningful relative rankings
+- [x] Test position hierarchy validation function
+- [x] Test convergence detection by counting position changes between initial and final ADP rankings
+- [x] Test that regret calculation assigns max regret when a player is drafted while a better same-position player (higher AVG) was still available
+- [x] Test that raw regret scores translate appropriately to ADP changes with different learning rates
 
 ### 3.4 Definition of Done
 ✅ **Phase 3 Complete When:**
-- [ ] All Phase 3.3 tests pass
-- [ ] >90% test coverage for Phase 3 modules
-- [ ] Pre-commit hooks pass (black, flake8, mypy)
-- [ ] Can calculate regret for any pick in a draft
-- [ ] Position hierarchy constraints prevent same-position inversions
-- [ ] ADP updates properly scale to meaningful pick positions
-- [ ] Convergence detection works with configurable thresholds
+- [x] All Phase 3.3 tests pass
+- [x] >90% test coverage for Phase 3 modules
+- [x] Pre-commit hooks pass (black, flake8, mypy)
+- [x] Can calculate regret for any pick in a draft
+- [x] Position hierarchy constraints prevent same-position inversions
+- [x] ADP updates properly scale to meaningful pick positions
+- [x] Convergence detection works with magnitude-based position change counting
 
 ## Phase 4: Main Optimization Loop
 
