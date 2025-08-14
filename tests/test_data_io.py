@@ -496,7 +496,6 @@ class TestArtifactsFunctions:
                 learning_rate=0.1,
                 max_iterations=1000,
                 num_teams=12,
-                enable_perturbation=True,
                 perturbation_factor=0.05,
                 iterations=500,
                 convergence_history=[10, 5, 2, 1, 0],
@@ -511,7 +510,6 @@ class TestArtifactsFunctions:
             assert "Learning rate: 0.1" in content
             assert "Max iterations: 1000" in content
             assert "Number of teams: 12" in content
-            assert "Perturbation enabled: True" in content
             assert "Perturbation factor: 0.05" in content
             assert "Final iterations: 500" in content
             assert "Final position changes: 0" in content

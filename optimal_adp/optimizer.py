@@ -201,7 +201,6 @@ def run_optimization_with_validation_and_io(
     learning_rate: float = 0.1,
     max_iterations: int = 1000,
     num_teams: int = NUM_TEAMS,
-    enable_perturbation: bool = False,
     perturbation_factor: float = 0.1,
     artifacts_outputs: bool = True,
 ) -> bool:
@@ -215,7 +214,6 @@ def run_optimization_with_validation_and_io(
         learning_rate: Learning rate for optimization
         max_iterations: Maximum iterations to allow
         num_teams: Number of teams in draft
-        enable_perturbation: Whether to perturb initial ADP values
         perturbation_factor: Amount of perturbation to apply
         artifacts_outputs: Whether to save optimization artifacts
 
@@ -228,7 +226,7 @@ def run_optimization_with_validation_and_io(
         initial_adp_data = compute_initial_adp(players)
         initial_adp = {player.name: float(adp) for player, _, adp in initial_adp_data}
 
-        if enable_perturbation:
+        if perturbation_factor:
             initial_adp_list = [
                 (player, vbr, adp) for player, vbr, adp in initial_adp_data
             ]
@@ -289,7 +287,6 @@ def run_optimization_with_validation_and_io(
                 learning_rate,
                 max_iterations,
                 num_teams,
-                enable_perturbation,
                 perturbation_factor,
                 iterations,
                 convergence_history,

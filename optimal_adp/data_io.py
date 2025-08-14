@@ -404,7 +404,6 @@ def save_run_parameters_txt(
     learning_rate: float,
     max_iterations: int,
     num_teams: int,
-    enable_perturbation: bool,
     perturbation_factor: float,
     iterations: int,
     convergence_history: list[int],
@@ -418,7 +417,6 @@ def save_run_parameters_txt(
         learning_rate: Learning rate used
         max_iterations: Maximum iterations allowed
         num_teams: Number of teams in draft
-        enable_perturbation: Whether perturbation was enabled
         perturbation_factor: Perturbation factor used
         iterations: Actual iterations completed
         convergence_history: History of position changes per iteration
@@ -430,7 +428,6 @@ def save_run_parameters_txt(
         f.write(f"Learning rate: {learning_rate}\n")
         f.write(f"Max iterations: {max_iterations}\n")
         f.write(f"Number of teams: {num_teams}\n")
-        f.write(f"Perturbation enabled: {enable_perturbation}\n")
         f.write(f"Perturbation factor: {perturbation_factor}\n")
         f.write(f"Final iterations: {iterations}\n")
         f.write(

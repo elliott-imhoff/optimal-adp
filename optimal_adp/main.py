@@ -90,8 +90,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
         learning_rate=args.learning_rate,
         max_iterations=args.max_iterations,
         num_teams=args.num_teams,
-        enable_perturbation=args.perturbation_factor > 0,
-        perturbation_factor=args.perturbation_factor,
+        perturbation_factor=args.perturb,
         artifacts_outputs=not args.no_artifacts,
     )
 
@@ -141,7 +140,7 @@ def main() -> None:
     )
 
     validate_parser.add_argument(
-        "--perturbation-factor",
+        "--perturb",
         type=float,
         default=0.0,
         help="Perturbation factor for initial ADP (default: 0.0 = no perturbation)",

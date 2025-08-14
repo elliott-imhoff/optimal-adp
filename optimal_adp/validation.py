@@ -210,7 +210,7 @@ def validate_position_hierarchy_results(
 
     is_valid, violations = validate_position_hierarchy(final_adp, players)
     if is_valid:
-        result.add_success("Position hierarchy maintained (QB < RB/WR < K/DEF)")
+        result.add_success("Position hierarchy maintained")
     else:
         result.add_failure("Position hierarchy violations found")
         for violation in violations:

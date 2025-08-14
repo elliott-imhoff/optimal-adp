@@ -47,7 +47,6 @@ class TestRunOptimizationWithValidationAndIO:
                     learning_rate=0.1,
                     max_iterations=10,  # Small for testing
                     num_teams=4,
-                    enable_perturbation=True,
                     perturbation_factor=0.05,
                     artifacts_outputs=True,
                 )
@@ -99,7 +98,6 @@ class TestRunOptimizationWithValidationAndIO:
                 learning_rate=0.1,
                 max_iterations=5,  # Small for testing
                 num_teams=2,
-                enable_perturbation=False,
                 perturbation_factor=0.0,
                 artifacts_outputs=False,  # No artifacts
             )
@@ -119,7 +117,6 @@ class TestRunOptimizationWithValidationAndIO:
                 learning_rate=0.2,
                 max_iterations=5,
                 num_teams=4,
-                enable_perturbation=True,
                 perturbation_factor=0.1,
                 artifacts_outputs=False,
             )
@@ -277,7 +274,6 @@ class TestRunOptimizationWithValidationAndIO:
                     learning_rate=0.1,
                     max_iterations=3,
                     num_teams=2,
-                    enable_perturbation=False,
                     artifacts_outputs=True,
                 )
 
@@ -318,7 +314,6 @@ class TestRunOptimizationWithValidationAndIO:
                     assert "Learning rate: 0.1" in content
                     assert "Max iterations: 3" in content
                     assert "Number of teams: 2" in content
-                    assert "Perturbation enabled: False" in content
 
             finally:
                 os.chdir(original_cwd)
