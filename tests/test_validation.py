@@ -254,6 +254,8 @@ class TestValidateConvergence:
                 mock_final_adp,
                 mock_convergence_history,
                 mock_iterations,
+                {},  # mock final_regrets
+                [],  # mock team_scores
             )
             mock_load.return_value = mock_players
             mock_initial.return_value = [
@@ -290,6 +292,8 @@ class TestValidateConvergence:
                 mock_final_adp,
                 mock_convergence_history,
                 mock_iterations,
+                {},  # mock final_regrets
+                [],  # mock team_scores
             )
             mock_load.return_value = mock_players
             mock_initial.return_value = [(mock_players[0], 10.0, 1.0)]

@@ -3,9 +3,9 @@
 import csv
 import logging
 
-from optimal_adp.config import NUM_TEAMS, Player
+from optimal_adp.config import Player
 from optimal_adp.data_io import load_player_data, compute_initial_adp
-from optimal_adp.draft_simulator import simulate_full_draft
+from optimal_adp.draft_simulator import simulate_full_draft, DraftState
 from optimal_adp.regret import (
     calculate_all_regrets,
     rescale_adp_to_picks,
@@ -57,28 +57,27 @@ def get_position_changes_detailed(
 
 def optimize_adp(
     data_file_path: str,
-    num_teams: int = NUM_TEAMS,
-    max_iterations: int = 1000,
-    learning_rate: float = 0.1,
-    output_file_path: str = "artifacts/final_adp.csv",
-) -> tuple[dict[str, float], list[int], int]:
-    """Optimize ADP values using regret minimization.
-
-    Iteratively optimizes ADP values using regret minimization until convergence
-    or maximum iterations reached.
+    num_teams: int,
+    max_iterations: int,
+    learning_rate: float,
+    output_file_path: str,
+) -> tuple[dict[str, float], list[int], int, dict[str, float], list[dict[str, float]]]:
+    """Run full ADP optimization loop.
 
     Args:
-        data_file_path: Path to CSV file containing player statistics
-        num_teams: Number of teams in the draft (defaults to NUM_TEAMS)
-        max_iterations: Maximum number of optimization iterations
-        learning_rate: Learning rate for ADP updates (η in update formula)
-        output_file_path: Path to write final ADP results
+        data_file_path: Path to CSV file with player data
+        num_teams: Number of teams in draft
+        max_iterations: Maximum optimization iterations
+        learning_rate: Learning rate for ADP updates
+        output_file_path: Where to save final ADP results
 
     Returns:
-        Tuple of (final_adp, convergence_history, iterations_completed)
-        - final_adp: Dict mapping player names to final ADP values
-        - convergence_history: List of position changes per iteration
-        - iterations_completed: Number of iterations actually completed
+        Tuple of:
+        - Final ADP values
+        - Convergence history (position changes per iteration)
+        - Number of iterations completed
+        - Final regret values for all players
+        - Final team scores with details
     """
     logger.info("Starting ADP optimization")
     logger.info(f"Max iterations: {max_iterations}")
@@ -131,6 +130,8 @@ def optimize_adp(
     # Track convergence history
     convergence_history: list[int] = []
     iterations_completed = 0
+    final_regrets: dict[str, float] = {}
+    final_draft_state = None
 
     # Step 3: Main optimization loop
     for iteration in range(max_iterations):
@@ -146,6 +147,10 @@ def optimize_adp(
         logger.debug("Calculating regret scores for all picks")
         player_regrets = calculate_all_regrets(draft_state)
         logger.debug(f"Regret calculated for {len(player_regrets)} players")
+
+        # Store final regret values and draft state for the last iteration
+        final_regrets = player_regrets
+        final_draft_state = draft_state
 
         # 3c: Update ADP with regret scores (with hierarchy constraints)
         logger.debug("Updating ADP from regret scores")
@@ -202,17 +207,35 @@ def optimize_adp(
             logger.info(f"Convergence achieved at iteration {iteration + 1}")
             break
 
-    # Step 4: Save final results
+    # Step 4: Save final results and create additional artifacts
     logger.info(f"Optimization completed after {iterations_completed} iterations")
     logger.info(f"Writing final ADP to {output_file_path}")
 
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create simple list for CSV output
+    # Helper function to get pick details
+    def get_pick_details(
+        player_name: str, draft_state: DraftState
+    ) -> tuple[int, int, int]:
+        """Get drafting team, round, and pick number for a player."""
+        for pick_num, (_, player) in enumerate(draft_state.draft_history):
+            if player.name == player_name:
+                team_id = draft_state.pick_order[pick_num]
+                round_num = (pick_num // num_teams) + 1
+                return team_id + 1, round_num, pick_num + 1  # 1-indexed
+        return 0, 0, 0  # Not drafted
+
+    # Create enhanced ADP list with draft details
     adp_players = []
     for player in all_players:
         if player.name in current_adp:
+            team_id, round_num, pick_num = (
+                get_pick_details(player.name, final_draft_state)
+                if final_draft_state
+                else (0, 0, 0)
+            )
+
             # Create a simple player dict for CSV writing
             player_dict = {
                 "name": player.name,
@@ -221,16 +244,51 @@ def optimize_adp(
                 "avg": player.avg,
                 "total": player.total,
                 "adp": current_adp[player.name],
+                "Team": team_id,
+                "Round": round_num,
+                "draft_pick": pick_num,
             }
             adp_players.append(player_dict)
 
-    # Write CSV manually since we have a dict format
+    # Sort by ADP (ascending order)
+    adp_players.sort(key=lambda x: float(str(x["adp"])))
+
+    # Write enhanced CSV with draft details
     with open(output_file_path, "w", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["name", "position", "team", "avg", "total", "adp"]
+            f,
+            fieldnames=[
+                "name",
+                "position",
+                "team",
+                "avg",
+                "total",
+                "adp",
+                "Team",
+                "Round",
+                "draft_pick",
+            ],
         )
         writer.writeheader()
         writer.writerows(adp_players)
 
+    # Create team scores data
+    team_scores = []
+    if final_draft_state:
+        for i, team in enumerate(final_draft_state.teams):
+            team_score = team.calculate_total_score()
+            team_dict = {
+                "team_id": i + 1,  # 1-indexed
+                "total_score": team_score,
+                "avg_per_week": team_score,  # Same as total_score since we use avg
+            }
+            team_scores.append(team_dict)
+
     logger.info("ADP optimization completed successfully")
-    return current_adp, convergence_history, iterations_completed
+    return (
+        current_adp,
+        convergence_history,
+        iterations_completed,
+        final_regrets,
+        team_scores,
+    )

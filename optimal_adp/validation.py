@@ -1,5 +1,6 @@
 """Main optimization module with validation and result archiving."""
 
+import csv
 import logging
 import random
 import os
@@ -229,9 +230,9 @@ def validate_convergence(
             result.add_info(f"Applying perturbation (factor: {perturbation_factor})")
             # Get initial ADP data and perturb it
             initial_adp_data = compute_initial_adp(players)
-            perturb_initial_adp(initial_adp_data, perturbation_factor)
-            # Note: Currently optimization doesn't support custom initial ADP
-            # This perturbation is for testing the perturbation function itself
+            initial_adp_data = perturb_initial_adp(
+                initial_adp_data, perturbation_factor
+            )
 
         result.add_info(
             f"Running optimization (learning_rate={learning_rate}, max_iterations={max_iterations})"
@@ -248,7 +249,13 @@ def validate_convergence(
                 output_file = Path(tmp_file.name)
 
         try:
-            final_adp, convergence_history, iterations = optimize_adp(
+            (
+                final_adp,
+                convergence_history,
+                iterations,
+                final_regrets,
+                team_scores,
+            ) = optimize_adp(
                 data_file_path=data_file_path,
                 num_teams=num_teams,
                 max_iterations=max_iterations,
@@ -280,6 +287,32 @@ def validate_convergence(
                     f.write("iteration,position_changes\n")
                     for i, changes in enumerate(convergence_history, 1):
                         f.write(f"{i},{changes}\n")
+
+                # Save final regret values (sorted by ADP)
+                regrets_file = result.artifacts_dir / "final_regrets.csv"
+                with open(regrets_file, "w", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["player_name", "regret_score", "final_adp"])
+                    # Create list of (player_name, regret, adp) and sort by ADP
+                    regret_data = []
+                    for player_name, regret in final_regrets.items():
+                        adp_value = final_adp.get(player_name, float("inf"))
+                        regret_data.append((player_name, regret, adp_value))
+
+                    # Sort by ADP
+                    regret_data.sort(key=lambda x: x[2])
+
+                    for player_name, regret, adp_value in regret_data:
+                        writer.writerow([player_name, regret, adp_value])
+
+                # Save team scores
+                team_scores_file = result.artifacts_dir / "team_scores.csv"
+                with open(team_scores_file, "w", newline="") as f:
+                    team_writer = csv.DictWriter(
+                        f, fieldnames=["team_id", "total_score", "avg_per_week"]
+                    )
+                    team_writer.writeheader()
+                    team_writer.writerows(team_scores)
 
                 result.add_info(f"Results artifactsd to: {result.artifacts_dir}")
             else:

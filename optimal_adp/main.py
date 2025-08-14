@@ -104,7 +104,13 @@ def cmd_optimize(args: argparse.Namespace) -> None:
 
     try:
         # Run optimization
-        final_adp, convergence_history, iterations = optimize_adp(
+        (
+            final_adp,
+            convergence_history,
+            iterations,
+            final_regrets,
+            team_scores,
+        ) = optimize_adp(
             data_file_path=str(data_file_path),
             num_teams=num_teams,
             max_iterations=args.max_iterations,
@@ -117,6 +123,8 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         logger.info(f"Final ADP computed for {len(final_adp)} players")
         logger.info(f"Iterations completed: {iterations}")
         logger.info(f"Convergence history: {convergence_history}")
+        logger.info(f"Final regrets calculated for {len(final_regrets)} players")
+        logger.info(f"Team scores calculated for {len(team_scores)} teams")
 
         if convergence_history and convergence_history[-1] == 0:
             logger.info("✅ Convergence achieved!")

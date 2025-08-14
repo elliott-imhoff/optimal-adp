@@ -58,7 +58,13 @@ class TestOptimizeAdp:
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "test_adp.csv"
 
-            final_adp, convergence_history, iterations = optimize_adp(
+            (
+                final_adp,
+                convergence_history,
+                iterations,
+                final_regrets,
+                team_scores,
+            ) = optimize_adp(
                 data_file_path=temp_data_file,
                 num_teams=SMALL_DRAFT_NUM_TEAMS,
                 max_iterations=5,  # More iterations to prevent early convergence
@@ -73,6 +79,8 @@ class TestOptimizeAdp:
             assert len(convergence_history) >= 1  # At least one convergence check
             assert isinstance(iterations, int)
             assert iterations >= 2  # Should run at least 2 iterations
+            assert isinstance(final_regrets, dict)
+            assert isinstance(team_scores, list)
 
             # Check output file was created
             assert output_path.exists()
@@ -86,7 +94,13 @@ class TestOptimizeAdp:
             with patch("optimal_adp.optimizer.check_convergence") as mock_convergence:
                 mock_convergence.side_effect = [5, 0]  # Converge on second check
 
-                final_adp, convergence_history, iterations = optimize_adp(
+                (
+                    final_adp,
+                    convergence_history,
+                    iterations,
+                    final_regrets,
+                    team_scores,
+                ) = optimize_adp(
                     data_file_path=temp_data_file,
                     num_teams=SMALL_DRAFT_NUM_TEAMS,
                     max_iterations=10,
@@ -103,7 +117,7 @@ class TestOptimizeAdp:
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "test_adp.csv"
 
-            optimize_adp(
+            _, _, _, _, _ = optimize_adp(
                 data_file_path=temp_data_file,
                 num_teams=SMALL_DRAFT_NUM_TEAMS,
                 max_iterations=1,
@@ -133,7 +147,7 @@ class TestOptimizeAdp:
     def test_invalid_input_file(self) -> None:
         """Test handling of invalid input file."""
         with pytest.raises(Exception):  # Should raise an exception
-            optimize_adp(
+            _, _, _, _, _ = optimize_adp(
                 data_file_path="nonexistent_file.csv",
                 num_teams=SMALL_DRAFT_NUM_TEAMS,
                 max_iterations=1,
@@ -149,7 +163,7 @@ class TestOptimizeAdp:
             output_path = Path(temp_dir) / "constrained_adp.csv"
 
             # Run optimization with higher learning rate to force position changes
-            optimize_adp(
+            _, _, _, _, _ = optimize_adp(
                 data_file_path=temp_data_file,
                 num_teams=SMALL_DRAFT_NUM_TEAMS,
                 max_iterations=3,
@@ -217,7 +231,13 @@ class TestMainCLI:
     ) -> None:
         """Test basic CLI execution with minimal arguments."""
         # Mock successful optimization
-        mock_optimize.return_value = ({"QB1": 1.0, "RB1": 2.0}, [5, 2, 0], 3)
+        mock_optimize.return_value = (
+            {"QB1": 1.0, "RB1": 2.0},
+            [5, 2, 0],
+            3,
+            {},  # final_regrets
+            [],  # team_scores
+        )
 
         # Mock command line arguments
         mock_argv.__getitem__ = lambda _, i: ["main.py", "optimize", temp_data_file][i]
@@ -253,7 +273,13 @@ class TestMainCLI:
     ) -> None:
         """Test CLI with all possible arguments."""
         # Mock successful optimization
-        mock_optimize.return_value = ({"QB1": 1.0}, [0], 1)
+        mock_optimize.return_value = (
+            {"QB1": 1.0},
+            [0],
+            1,
+            {},  # final_regrets
+            [],  # team_scores
+        )
 
         # Mock command line arguments with all options
         args = [
@@ -323,7 +349,13 @@ class TestIntegrationWithRealData:
             output_path = Path(temp_dir) / "integration_test_adp.csv"
 
             try:
-                final_adp, convergence_history, iterations = optimize_adp(
+                (
+                    final_adp,
+                    convergence_history,
+                    iterations,
+                    final_regrets,
+                    team_scores,
+                ) = optimize_adp(
                     data_file_path=str(data_file),
                     num_teams=num_teams,
                     max_iterations=5,  # Keep small for testing
@@ -337,6 +369,8 @@ class TestIntegrationWithRealData:
             assert len(final_adp) > 0
             assert len(convergence_history) > 0
             assert iterations > 0
+            assert len(final_regrets) > 0
+            assert len(team_scores) > 0
             assert output_path.exists()
 
             # Check that top players have low ADP (good draft positions)
