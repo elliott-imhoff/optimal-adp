@@ -1,16 +1,30 @@
 """Main ADP optimization loop combining all phases."""
 
-import csv
 import logging
 
-from optimal_adp.config import Player
-from optimal_adp.data_io import load_player_data, compute_initial_adp
-from optimal_adp.draft_simulator import simulate_full_draft, DraftState
+from optimal_adp.config import NUM_TEAMS
+from optimal_adp.data_io import (
+    compute_initial_adp,
+    create_run_directory,
+    load_player_data,
+    save_convergence_history_csv,
+    save_final_adp_csv,
+    save_initial_vbr_adp_csv,
+    save_regrets_csv,
+    save_run_parameters_txt,
+    save_team_scores_csv,
+)
+from optimal_adp.models import simulate_full_draft, DraftState, Player
 from optimal_adp.regret import (
     calculate_all_regrets,
     rescale_adp_to_picks,
     check_convergence,
     validate_position_hierarchy_detailed,
+    update_adp_from_regret_constrained,
+)
+from optimal_adp.validation import (
+    perturb_initial_adp,
+    validate_optimization_results,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,20 +70,20 @@ def get_position_changes_detailed(
 
 
 def optimize_adp(
-    data_file_path: str,
-    num_teams: int,
-    max_iterations: int,
-    learning_rate: float,
-    output_file_path: str,
-) -> tuple[dict[str, float], list[int], int, dict[str, float], list[dict[str, float]]]:
-    """Run full ADP optimization loop.
+    players: list[Player],
+    initial_adp: dict[str, float],
+    num_teams: int = 12,
+    max_iterations: int = 1000,
+    learning_rate: float = 0.1,
+) -> tuple[dict[str, float], list[int], int, dict[str, float], DraftState | None]:
+    """Run pure ADP optimization algorithm without I/O operations.
 
     Args:
-        data_file_path: Path to CSV file with player data
+        players: List of all player data
+        initial_adp: Initial ADP values for all players
         num_teams: Number of teams in draft
         max_iterations: Maximum optimization iterations
         learning_rate: Learning rate for ADP updates
-        output_file_path: Where to save final ADP results
 
     Returns:
         Tuple of:
@@ -77,55 +91,18 @@ def optimize_adp(
         - Convergence history (position changes per iteration)
         - Number of iterations completed
         - Final regret values for all players
-        - Final team scores with details
+        - Final draft state
     """
     logger.info("Starting ADP optimization")
     logger.info(f"Max iterations: {max_iterations}")
     logger.info(f"Learning rate: {learning_rate}")
 
-    # Step 1: Load and filter player data
-    logger.info(f"Loading player data from {data_file_path}")
-    all_players = load_player_data(data_file_path)
-    logger.info(f"Loaded {len(all_players)} players")
-
-    # Step 2: Compute initial VBR-based ADP
-    logger.info("Computing initial VBR-based ADP")
-    initial_adp_data = compute_initial_adp(all_players)
-    current_adp = {player.name: float(adp) for player, vbr, adp in initial_adp_data}
-    logger.info(f"Initial ADP computed for {len(current_adp)} players")
-
-    # Step 2.1: Save initial VBR-based ADP as artifact
-    from pathlib import Path
-
-    output_path = Path(output_file_path)
-
-    # Ensure the output directory exists
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    initial_adp_path = output_path.parent / "initial_vbr_adp.csv"
-    logger.info(f"Saving initial VBR-based ADP to {initial_adp_path}")
-
-    # Create initial ADP list for CSV output
-    initial_adp_players = []
-    for player, vbr, adp in initial_adp_data:
-        player_dict = {
-            "name": player.name,
-            "position": player.position,
-            "team": player.team,
-            "avg": player.avg,
-            "total": player.total,
-            "vbr": float(vbr),
-            "adp": float(adp),
-        }
-        initial_adp_players.append(player_dict)
-
-    # Write initial ADP CSV
-    with open(initial_adp_path, "w", newline="") as f:
-        writer = csv.DictWriter(
-            f, fieldnames=["name", "position", "team", "avg", "total", "vbr", "adp"]
-        )
-        writer.writeheader()
-        writer.writerows(initial_adp_players)
+    # Use provided data
+    all_players = players
+    current_adp = dict(initial_adp)  # Make a copy
+    logger.info(
+        f"Using {len(all_players)} players with initial ADP for {len(current_adp)} players"
+    )
 
     # Track convergence history
     convergence_history: list[int] = []
@@ -154,7 +131,6 @@ def optimize_adp(
 
         # 3c: Update ADP with regret scores (with hierarchy constraints)
         logger.debug("Updating ADP from regret scores")
-        from .regret import update_adp_from_regret_constrained
 
         updated_adp = update_adp_from_regret_constrained(
             current_adp, player_regrets, learning_rate, all_players
@@ -207,82 +183,8 @@ def optimize_adp(
             logger.info(f"Convergence achieved at iteration {iteration + 1}")
             break
 
-    # Step 4: Save final results and create additional artifacts
+    # Complete optimization
     logger.info(f"Optimization completed after {iterations_completed} iterations")
-    logger.info(f"Writing final ADP to {output_file_path}")
-
-    # Ensure output directory exists
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Helper function to get pick details
-    def get_pick_details(
-        player_name: str, draft_state: DraftState
-    ) -> tuple[int, int, int]:
-        """Get drafting team, round, and pick number for a player."""
-        for pick_num, (_, player) in enumerate(draft_state.draft_history):
-            if player.name == player_name:
-                team_id = draft_state.pick_order[pick_num]
-                round_num = (pick_num // num_teams) + 1
-                return team_id + 1, round_num, pick_num + 1  # 1-indexed
-        return 0, 0, 0  # Not drafted
-
-    # Create enhanced ADP list with draft details
-    adp_players = []
-    for player in all_players:
-        if player.name in current_adp:
-            team_id, round_num, pick_num = (
-                get_pick_details(player.name, final_draft_state)
-                if final_draft_state
-                else (0, 0, 0)
-            )
-
-            # Create a simple player dict for CSV writing
-            player_dict = {
-                "name": player.name,
-                "position": player.position,
-                "team": player.team,
-                "avg": player.avg,
-                "total": player.total,
-                "adp": current_adp[player.name],
-                "Team": team_id,
-                "Round": round_num,
-                "draft_pick": pick_num,
-            }
-            adp_players.append(player_dict)
-
-    # Sort by ADP (ascending order)
-    adp_players.sort(key=lambda x: float(str(x["adp"])))
-
-    # Write enhanced CSV with draft details
-    with open(output_file_path, "w", newline="") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=[
-                "name",
-                "position",
-                "team",
-                "avg",
-                "total",
-                "adp",
-                "Team",
-                "Round",
-                "draft_pick",
-            ],
-        )
-        writer.writeheader()
-        writer.writerows(adp_players)
-
-    # Create team scores data
-    team_scores = []
-    if final_draft_state:
-        for i, team in enumerate(final_draft_state.teams):
-            team_score = team.calculate_total_score()
-            team_dict = {
-                "team_id": i + 1,  # 1-indexed
-                "total_score": team_score,
-                "avg_per_week": team_score,  # Same as total_score since we use avg
-            }
-            team_scores.append(team_dict)
 
     logger.info("ADP optimization completed successfully")
     return (
@@ -290,5 +192,124 @@ def optimize_adp(
         convergence_history,
         iterations_completed,
         final_regrets,
-        team_scores,
+        final_draft_state,
     )
+
+
+def run_optimization_with_validation_and_io(
+    data_file_path: str,
+    learning_rate: float = 0.1,
+    max_iterations: int = 1000,
+    num_teams: int = NUM_TEAMS,
+    enable_perturbation: bool = False,
+    perturbation_factor: float = 0.1,
+    artifacts_outputs: bool = True,
+) -> bool:
+    """Run complete optimization process with I/O, validation, and artifacts.
+
+    This function centralizes all I/O operations (CSV reading, artifact writing)
+    and provides the same interface as the old validate_optimization function.
+
+    Args:
+        data_file_path: Path to player data CSV
+        learning_rate: Learning rate for optimization
+        max_iterations: Maximum iterations to allow
+        num_teams: Number of teams in draft
+        enable_perturbation: Whether to perturb initial ADP values
+        perturbation_factor: Amount of perturbation to apply
+        artifacts_outputs: Whether to save optimization artifacts
+
+    Returns:
+        True if all validations pass, False otherwise
+    """
+    try:
+        # Step 1: Load and prepare data (centralized I/O)
+        players = load_player_data(data_file_path)
+        initial_adp_data = compute_initial_adp(players)
+        initial_adp = {player.name: float(adp) for player, _, adp in initial_adp_data}
+
+        if enable_perturbation:
+            initial_adp_list = [
+                (player, vbr, adp) for player, vbr, adp in initial_adp_data
+            ]
+            perturbed_list = perturb_initial_adp(initial_adp_list, perturbation_factor)
+            initial_adp = {player.name: float(adp) for player, _, adp in perturbed_list}
+            initial_adp_data = perturbed_list
+
+        # Step 2: Run optimization
+        (
+            final_adp,
+            convergence_history,
+            iterations,
+            regret_values,
+            draft_state,
+        ) = optimize_adp(
+            players=players,
+            initial_adp=initial_adp,
+            learning_rate=learning_rate,
+            max_iterations=max_iterations,
+            num_teams=num_teams,
+        )
+
+        # Step 3: Run validation using simplified function
+        result = validate_optimization_results(
+            players=players,
+            final_adp=final_adp,
+            iterations=iterations,
+            max_iterations=max_iterations,
+            num_teams=num_teams,
+        )
+
+        # Step 4: Save artifacts if requested (centralized I/O)
+        if artifacts_outputs:
+            run_id, run_dir = create_run_directory(learning_rate, max_iterations)
+
+            # Save initial VBR-based ADP
+            save_initial_vbr_adp_csv(run_dir / "initial_vbr_adp.csv", initial_adp_data)
+
+            # Save final optimized ADP
+            save_final_adp_csv(
+                str(run_dir / "final_adp.csv"),
+                players,
+                final_adp,
+                draft_state,
+                num_teams,
+            )
+
+            # Save other artifacts
+            save_convergence_history_csv(
+                run_dir / "convergence_history.csv", convergence_history
+            )
+            save_team_scores_csv(run_dir / "team_scores.csv", draft_state)
+            save_regrets_csv(run_dir / "regrets.csv", regret_values, final_adp)
+            save_run_parameters_txt(
+                run_dir / "run_parameters.txt",
+                run_id,
+                data_file_path,
+                learning_rate,
+                max_iterations,
+                num_teams,
+                enable_perturbation,
+                perturbation_factor,
+                iterations,
+                convergence_history,
+            )
+
+        # Step 5: Print results
+        print("\n" + "=" * 60)
+        print("OPTIMIZATION VALIDATION RESULTS")
+        print("=" * 60)
+
+        for message in result.messages:
+            print(message)
+
+        if iterations is not None:
+            print(f"\nConvergence: {iterations} iterations")
+
+        print("=" * 60)
+
+        return result.all_passed()
+
+    except Exception as e:
+        logging.error(f"Optimization with validation failed: {e}")
+        return False

@@ -6,13 +6,21 @@ from pathlib import Path
 
 import pytest
 
-from optimal_adp.config import Player
 from optimal_adp.data_io import (
     compute_initial_adp,
+    create_run_directory,
+    get_pick_details,
     load_player_data,
     save_adp_results,
+    save_convergence_history_csv,
+    save_final_adp_csv,
+    save_initial_vbr_adp_csv,
     save_regret_results,
+    save_regrets_csv,
+    save_run_parameters_txt,
+    save_team_scores_csv,
 )
+from optimal_adp.models import DraftState, Player
 
 
 def test_load_player_data_from_fixture() -> None:
@@ -42,8 +50,6 @@ def test_load_player_data_from_fixture() -> None:
 
 def test_load_real_data_file() -> None:
     """Test loading the actual 2024 stats CSV file."""
-    from pathlib import Path
-
     data_file = Path("data/2024_stats.csv")
     if not data_file.exists():
         pytest.skip("Real data file not available")
@@ -243,3 +249,310 @@ def test_player_filtering() -> None:
     assert "Valid Player" in names
     assert "Some Kicker" not in names
     assert "Injured Player" not in names
+
+
+class TestArtifactsFunctions:
+    """Test functions moved from artifacts.py module."""
+
+    def test_create_run_directory(self) -> None:
+        """Test creating a run directory with timestamp and parameters."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_cwd = Path.cwd()
+            try:
+                # Change to temp directory for this test
+                import os
+
+                os.chdir(temp_dir)
+
+                learning_rate = 0.1
+                max_iterations = 1000
+
+                run_id, run_path = create_run_directory(learning_rate, max_iterations)
+
+                # Check run_id format
+                assert f"lr{learning_rate}" in run_id
+                assert f"iter{max_iterations}" in run_id
+                assert len(run_id.split("_")) >= 3  # timestamp_lr{lr}_iter{iter}
+
+                # Check directory was created
+                assert run_path.exists()
+                assert run_path.is_dir()
+                assert "artifacts" in str(run_path)
+                assert f"run_{run_id}" in str(run_path)
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_get_pick_details_drafted_player(self) -> None:
+        """Test getting pick details for a drafted player."""
+        # Create test players
+        player1 = Player("Player1", "QB", "TEAM1", 25.0, 400.0)
+        player2 = Player("Player2", "RB", "TEAM2", 20.0, 320.0)
+        players = [player1, player2]
+
+        # Create a simple draft state with 2 teams
+        num_teams = 2
+        draft_state = DraftState(players, {"Player1": 1.0, "Player2": 2.0})
+
+        # Simulate the draft to populate draft_history
+        draft_state.draft_history = [
+            (0, player1),  # Team 0 picks Player1 first
+            (1, player2),  # Team 1 picks Player2 second
+        ]
+        draft_state.pick_order = [0, 1]  # Team order for picks
+
+        # Test Player1 (first pick)
+        team_id, round_num, pick_num = get_pick_details(
+            "Player1", draft_state, num_teams
+        )
+        assert team_id == 1  # Team 0 becomes team 1 (1-indexed)
+        assert round_num == 1  # First round
+        assert pick_num == 1  # First pick
+
+        # Test Player2 (second pick)
+        team_id, round_num, pick_num = get_pick_details(
+            "Player2", draft_state, num_teams
+        )
+        assert team_id == 2  # Team 1 becomes team 2 (1-indexed)
+        assert round_num == 1  # First round
+        assert pick_num == 2  # Second pick
+
+    def test_get_pick_details_undrafted_player(self) -> None:
+        """Test getting pick details for an undrafted player."""
+        player1 = Player("Player1", "QB", "TEAM1", 25.0, 400.0)
+        players = [player1]
+
+        draft_state = DraftState(players, {"Player1": 1.0})
+        draft_state.draft_history = []  # Empty draft history
+
+        # Test undrafted player
+        team_id, round_num, pick_num = get_pick_details("Player1", draft_state, 2)
+        assert team_id == 0
+        assert round_num == 0
+        assert pick_num == 0
+
+    def test_save_final_adp_csv(self) -> None:
+        """Test saving final ADP results to CSV."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False
+        ) as temp_file:
+            temp_path = temp_file.name
+
+        try:
+            # Create test data
+            players = [
+                Player("Player1", "QB", "TEAM1", 25.0, 400.0),
+                Player("Player2", "RB", "TEAM2", 20.0, 320.0),
+            ]
+            final_adp = {"Player1": 1.5, "Player2": 2.3}
+
+            # Save without draft state
+            save_final_adp_csv(temp_path, players, final_adp, None, 2)
+
+            # Read and verify
+            with open(temp_path, "r") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+
+            assert len(rows) == 2
+
+            # Check first row (should be sorted by ADP)
+            assert rows[0]["name"] == "Player1"
+            assert rows[0]["position"] == "QB"
+            assert float(rows[0]["adp"]) == 1.5
+            assert int(rows[0]["Team"]) == 0  # No draft state
+            assert int(rows[0]["Round"]) == 0
+            assert int(rows[0]["draft_pick"]) == 0
+
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+
+    def test_save_team_scores_csv_with_draft_state(self) -> None:
+        """Test saving team scores to CSV with draft state."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+
+        try:
+            # Create test data with draft state
+            players = [
+                Player("Player1", "QB", "TEAM1", 25.0, 400.0),
+                Player("Player2", "RB", "TEAM2", 20.0, 320.0),
+            ]
+
+            draft_state = DraftState(players, {"Player1": 1.0, "Player2": 2.0})
+
+            # Save team scores
+            team_scores = save_team_scores_csv(temp_path, draft_state)
+
+            # Verify return value
+            assert isinstance(team_scores, list)
+            assert len(team_scores) > 0
+
+            # Verify file was created
+            assert temp_path.exists()
+
+            # Read and verify CSV content
+            with open(temp_path, "r") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+
+            assert len(rows) == len(team_scores)
+            for i, row in enumerate(rows):
+                assert int(row["team_id"]) == team_scores[i]["team_id"]
+                assert float(row["total_score"]) == team_scores[i]["total_score"]
+
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    def test_save_team_scores_csv_no_draft_state(self) -> None:
+        """Test saving team scores to CSV without draft state."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+
+        try:
+            # Save with None draft state
+            team_scores = save_team_scores_csv(temp_path, None)
+
+            # Should return empty list
+            assert team_scores == []
+
+            # File should not be created or should be empty
+            if temp_path.exists():
+                assert temp_path.stat().st_size == 0
+
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    def test_save_regrets_csv(self) -> None:
+        """Test saving regrets to CSV."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+
+        try:
+            final_regrets = {"Player1": -0.5, "Player2": 1.2}
+            final_adp = {"Player1": 1.0, "Player2": 2.0}
+
+            save_regrets_csv(temp_path, final_regrets, final_adp)
+
+            # Read and verify
+            with open(temp_path, "r") as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+
+            assert len(rows) == 3  # Header + 2 data rows
+            assert rows[0] == ["player_name", "regret_score", "final_adp"]
+
+            # Should be sorted by ADP
+            assert rows[1][0] == "Player1"  # Lower ADP first
+            assert float(rows[1][1]) == -0.5
+            assert float(rows[1][2]) == 1.0
+
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    def test_save_convergence_history_csv(self) -> None:
+        """Test saving convergence history to CSV."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+
+        try:
+            convergence_history = [10, 5, 2, 1, 0]
+
+            save_convergence_history_csv(temp_path, convergence_history)
+
+            # Read and verify
+            with open(temp_path, "r") as f:
+                content = f.read().strip()
+
+            lines = content.split("\n")
+            assert len(lines) == 6  # Header + 5 data rows
+            assert lines[0] == "iteration,position_changes"
+            assert lines[1] == "1,10"
+            assert lines[-1] == "5,0"
+
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    def test_save_run_parameters_txt(self) -> None:
+        """Test saving run parameters to text file."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+
+        try:
+            save_run_parameters_txt(
+                temp_path,
+                run_id="test_run_123",
+                data_file_path="data/test.csv",
+                learning_rate=0.1,
+                max_iterations=1000,
+                num_teams=12,
+                enable_perturbation=True,
+                perturbation_factor=0.05,
+                iterations=500,
+                convergence_history=[10, 5, 2, 1, 0],
+            )
+
+            # Read and verify
+            with open(temp_path, "r") as f:
+                content = f.read()
+
+            assert "Run ID: test_run_123" in content
+            assert "Data file: data/test.csv" in content
+            assert "Learning rate: 0.1" in content
+            assert "Max iterations: 1000" in content
+            assert "Number of teams: 12" in content
+            assert "Perturbation enabled: True" in content
+            assert "Perturbation factor: 0.05" in content
+            assert "Final iterations: 500" in content
+            assert "Final position changes: 0" in content
+
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    def test_save_initial_vbr_adp_csv(self) -> None:
+        """Test saving initial VBR ADP to CSV."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+
+        try:
+            # Create test data
+            player1 = Player("Player1", "QB", "TEAM1", 25.0, 400.0)
+            player2 = Player("Player2", "RB", "TEAM2", 20.0, 320.0)
+
+            initial_adp_data = [
+                (player1, 5.2, 1),
+                (player2, 3.8, 2),
+            ]
+
+            save_initial_vbr_adp_csv(temp_path, initial_adp_data)
+
+            # Read and verify
+            with open(temp_path, "r") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+
+            assert len(rows) == 2
+
+            # Check first row
+            assert rows[0]["name"] == "Player1"
+            assert rows[0]["position"] == "QB"
+            assert rows[0]["team"] == "TEAM1"
+            assert float(rows[0]["avg"]) == 25.0
+            assert float(rows[0]["total"]) == 400.0
+            assert float(rows[0]["vbr"]) == 5.2
+            assert float(rows[0]["adp"]) == 1.0
+
+        finally:
+            temp_path.unlink(missing_ok=True)

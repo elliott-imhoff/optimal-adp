@@ -1,17 +1,17 @@
 """Tests for the validation module."""
 
+import random
 import tempfile
 import pytest
-from unittest.mock import patch
 
-from optimal_adp.config import Player
+from optimal_adp.config import NUM_TEAMS
+from optimal_adp.models import Player
 from optimal_adp.validation import (
     ValidationResult,
     perturb_initial_adp,
     validate_position_hierarchy,
     validate_elite_players_first_round,
-    validate_convergence,
-    validate_optimization,
+    validate_optimization_results,
 )
 
 
@@ -78,7 +78,6 @@ class TestPerturbInitialAdp:
     def test_perturb_changes_values(self) -> None:
         """Test perturbation actually changes ADP values."""
         # Create test data with fixed random seed for reproducibility
-        import random
 
         random.seed(42)
 
@@ -217,122 +216,78 @@ class TestValidateElitePlayersFirstRound:
         assert len(violations) == 3  # Should report all 3 positions missing
 
 
-class TestValidateConvergence:
-    """Tests for validate_convergence function."""
+class TestValidationHelpers:
+    """Tests for focused validation helper functions."""
 
-    def test_validation_with_mock_optimization(self, temp_data_file: str) -> None:
-        """Test validation with mocked optimization."""
-        # Mock the optimize_adp function to return controlled results
-        mock_final_adp = {
-            "TopQB": 5.0,
-            "TopRB": 1.0,
-            "TopWR": 2.0,
-            "QB2": 15.0,
-            "RB2": 12.0,
-            "WR2": 18.0,
-        }
-        mock_convergence_history = [10, 5, 2, 0]  # Converged after 4 iterations
-        mock_iterations = 4
+    def test_validate_optimization_results_with_mock(self) -> None:
+        """Test validation helper function integration."""
+        # Test the pure validation logic without I/O
 
-        # Mock players data
+        # Setup test data
         mock_players = [
             Player("TopQB", "QB", "TEAM1", 30.0, 500.0),
             Player("TopRB", "RB", "TEAM3", 28.0, 450.0),
             Player("TopWR", "WR", "TEAM5", 26.0, 420.0),
-            Player("QB2", "QB", "TEAM2", 25.0, 400.0),
-            Player("RB2", "RB", "TEAM4", 22.0, 350.0),
-            Player("WR2", "WR", "TEAM6", 20.0, 300.0),
         ]
 
-        with patch("optimal_adp.validation.optimize_adp") as mock_optimize, patch(
-            "optimal_adp.validation.load_player_data"
-        ) as mock_load, patch(
-            "optimal_adp.validation.compute_initial_adp"
-        ) as mock_initial:
-            # Setup mocks
-            mock_optimize.return_value = (
-                mock_final_adp,
-                mock_convergence_history,
-                mock_iterations,
-                {},  # mock final_regrets
-                [],  # mock team_scores
-            )
-            mock_load.return_value = mock_players
-            mock_initial.return_value = [
-                (player, 10.0, float(i + 1)) for i, player in enumerate(mock_players)
-            ]
+        final_adp = {p.name: float(i + 1) for i, p in enumerate(mock_players)}
 
-            # Run validation
-            result = validate_convergence(temp_data_file)
+        # Test successful validation (converged before max iterations)
+        result = validate_optimization_results(
+            players=mock_players,
+            final_adp=final_adp,
+            iterations=5,
+            max_iterations=50,
+            num_teams=NUM_TEAMS,
+        )
 
-            # Check results
-            assert result.passed is True
-            assert result.convergence_iterations == 4
-            assert result.final_position_changes == 0
-
-            # Check that success messages are present
-            success_messages = [msg for msg in result.messages if "✅" in msg]
-            assert len(success_messages) >= 3  # Should have multiple success messages
-
-    def test_validation_with_failed_convergence(self, temp_data_file: str) -> None:
-        """Test validation handles failed convergence."""
-        # Mock failed convergence (didn't reach 0 position changes)
-        mock_final_adp = {"Player1": 1.0}
-        mock_convergence_history = [10, 8, 6, 5]  # Never reached 0
-        mock_iterations = 1000  # Hit max iterations
-
-        mock_players = [Player("Player1", "QB", "TEAM1", 30.0, 500.0)]
-
-        with patch("optimal_adp.validation.optimize_adp") as mock_optimize, patch(
-            "optimal_adp.validation.load_player_data"
-        ) as mock_load, patch(
-            "optimal_adp.validation.compute_initial_adp"
-        ) as mock_initial:
-            mock_optimize.return_value = (
-                mock_final_adp,
-                mock_convergence_history,
-                mock_iterations,
-                {},  # mock final_regrets
-                [],  # mock team_scores
-            )
-            mock_load.return_value = mock_players
-            mock_initial.return_value = [(mock_players[0], 10.0, 1.0)]
-
-            result = validate_convergence(temp_data_file, max_iterations=1000)
-
-            assert result.passed is False
-            assert result.convergence_iterations == 1000
-            assert result.final_position_changes == 5
+        assert result.all_passed() is True
+        assert any("Converged after 5 iterations" in msg for msg in result.messages)
+        assert any("All validation checks passed" in msg for msg in result.messages)
 
 
 class TestValidateOptimization:
-    """Tests for validate_optimization function."""
+    """Tests for validate_optimization_results function."""
 
-    def test_validate_optimization_success(self, temp_data_file: str) -> None:
+    def test_validate_optimization_success(self) -> None:
         """Test main validation function with successful case."""
-        with patch("optimal_adp.validation.validate_convergence") as mock_validate:
-            # Mock successful validation
-            mock_result = ValidationResult()
-            mock_result.passed = True
-            mock_result.convergence_iterations = 5
-            mock_result.final_position_changes = 0
-            mock_result.add_success("All tests passed")
-            mock_validate.return_value = mock_result
+        # Test the unified validation function
 
-            success = validate_optimization(temp_data_file)
-            assert success is True
+        # Setup mock data that will pass validation
+        mock_players = [
+            Player("TopQB", "QB", "TEAM1", 30.0, 500.0),
+            Player("TopRB", "RB", "TEAM3", 28.0, 450.0),
+            Player("TopWR", "WR", "TEAM5", 26.0, 420.0),
+        ]
 
-    def test_validate_optimization_failure(self, temp_data_file: str) -> None:
+        final_adp = {p.name: float(i + 1) for i, p in enumerate(mock_players)}
+
+        result = validate_optimization_results(
+            players=mock_players,
+            final_adp=final_adp,
+            iterations=10,  # less than max
+            max_iterations=1000,
+            num_teams=10,
+        )
+
+        assert result.all_passed() is True
+
+    def test_validate_optimization_failure(self) -> None:
         """Test main validation function with failure case."""
-        with patch("optimal_adp.validation.validate_convergence") as mock_validate:
-            # Mock failed validation
-            mock_result = ValidationResult()
-            mock_result.passed = False
-            mock_result.add_failure("Test failed")
-            mock_validate.return_value = mock_result
+        # Test case that will fail validation (hit max iterations)
 
-            success = validate_optimization(temp_data_file)
-            assert success is False
+        mock_players = [Player("Player1", "QB", "TEAM1", 30.0, 500.0)]
+        final_adp = {"Player1": 1.0}
+
+        result = validate_optimization_results(
+            players=mock_players,
+            final_adp=final_adp,
+            iterations=1000,  # hit max iterations
+            max_iterations=1000,
+            num_teams=10,
+        )
+
+        assert result.all_passed() is False
 
 
 # Fixtures for testing

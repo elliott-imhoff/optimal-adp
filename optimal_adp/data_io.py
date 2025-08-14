@@ -1,10 +1,16 @@
 """Data input/output module for player statistics and ADP values."""
 
 import csv
+import logging
 from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from .config import BASELINE_POSITIONS, Player
+from .config import BASELINE_POSITIONS
+from .models import DraftState, Player
+
+logger = logging.getLogger(__name__)
 
 
 def load_player_data(
@@ -200,3 +206,265 @@ def save_regret_results(regret_data: list[dict[str, Any]], output_path: str) -> 
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(regret_data)
+
+
+def create_run_directory(learning_rate: float, max_iterations: int) -> tuple[str, Path]:
+    """Create a timestamped directory for this optimization run.
+
+    Args:
+        learning_rate: Learning rate used for optimization
+        max_iterations: Maximum iterations for optimization
+
+    Returns:
+        Tuple of (run_id, artifacts_directory_path)
+    """
+    # Generate run ID based on current timestamp and parameters
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+    run_id = f"{timestamp}_lr{learning_rate}_iter{max_iterations}"
+
+    # Create artifacts directory structure
+    artifacts_base = Path("artifacts")
+    run_dir = artifacts_base / f"run_{run_id}"
+
+    # Create directories if they don't exist
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Created run directory: {run_dir}")
+    return run_id, run_dir
+
+
+def get_pick_details(
+    player_name: str, draft_state: DraftState, num_teams: int
+) -> tuple[int, int, int]:
+    """Get drafting team, round, and pick number for a player.
+
+    Args:
+        player_name: Name of the player
+        draft_state: Draft state containing draft history
+        num_teams: Number of teams in the draft
+
+    Returns:
+        Tuple of (team_id, round_num, pick_num) all 1-indexed, or (0, 0, 0) if not drafted
+    """
+    for pick_num, (_, player) in enumerate(draft_state.draft_history):
+        if player.name == player_name:
+            team_id = draft_state.pick_order[pick_num]
+            round_num = (pick_num // num_teams) + 1
+            return team_id + 1, round_num, pick_num + 1  # 1-indexed
+    return 0, 0, 0  # Not drafted
+
+
+def save_final_adp_csv(
+    output_file_path: str,
+    players: list[Player],
+    final_adp: dict[str, float],
+    final_draft_state: DraftState | None,
+    num_teams: int,
+) -> None:
+    """Save final ADP results to CSV file with draft details.
+
+    Args:
+        output_file_path: Path where to save the CSV file
+        players: List of all players
+        final_adp: Final ADP values for all players
+        final_draft_state: Final draft state (can be None)
+        num_teams: Number of teams in the draft
+    """
+    # Create enhanced ADP list with draft details
+    adp_players = []
+    for player in players:
+        if player.name in final_adp:
+            team_id, round_num, pick_num = (
+                get_pick_details(player.name, final_draft_state, num_teams)
+                if final_draft_state
+                else (0, 0, 0)
+            )
+
+            # Create a simple player dict for CSV writing
+            player_dict = {
+                "name": player.name,
+                "position": player.position,
+                "team": player.team,
+                "avg": player.avg,
+                "total": player.total,
+                "adp": final_adp[player.name],
+                "Team": team_id,
+                "Round": round_num,
+                "draft_pick": pick_num,
+            }
+            adp_players.append(player_dict)
+
+    # Sort by ADP (ascending order)
+    adp_players.sort(key=lambda x: float(str(x["adp"])))
+
+    # Ensure output directory exists
+    Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
+
+    # Write enhanced CSV with draft details
+    with open(output_file_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "name",
+                "position",
+                "team",
+                "avg",
+                "total",
+                "adp",
+                "Team",
+                "Round",
+                "draft_pick",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(adp_players)
+
+
+def save_team_scores_csv(
+    file_path: Path, final_draft_state: DraftState | None
+) -> list[dict[str, float]]:
+    """Save team scores to CSV file and return the data.
+
+    Args:
+        file_path: Path where to save the team scores CSV
+        final_draft_state: Final draft state (can be None)
+
+    Returns:
+        List of team score dictionaries
+    """
+    team_scores = []
+    if final_draft_state:
+        for i, team in enumerate(final_draft_state.teams):
+            team_score = team.calculate_total_score()
+            team_dict = {
+                "team_id": i + 1,  # 1-indexed
+                "total_score": team_score,
+                "avg_per_week": team_score,  # Same as total_score since we use avg
+            }
+            team_scores.append(team_dict)
+
+        # Save to CSV
+        with open(file_path, "w", newline="") as f:
+            writer = csv.DictWriter(
+                f, fieldnames=["team_id", "total_score", "avg_per_week"]
+            )
+            writer.writeheader()
+            writer.writerows(team_scores)
+
+    return team_scores
+
+
+def save_regrets_csv(
+    file_path: Path, final_regrets: dict[str, float], final_adp: dict[str, float]
+) -> None:
+    """Save final regret values to CSV file, sorted by ADP.
+
+    Args:
+        file_path: Path where to save the regrets CSV
+        final_regrets: Dictionary of player regret scores
+        final_adp: Dictionary of final ADP values for sorting
+    """
+    with open(file_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["player_name", "regret_score", "final_adp"])
+
+        # Create list of (player_name, regret, adp) and sort by ADP
+        regret_data = []
+        for player_name, regret in final_regrets.items():
+            adp_value = final_adp.get(player_name, float("inf"))
+            regret_data.append((player_name, regret, adp_value))
+
+        # Sort by ADP
+        regret_data.sort(key=lambda x: x[2])
+
+        for player_name, regret, adp_value in regret_data:
+            writer.writerow([player_name, regret, adp_value])
+
+
+def save_convergence_history_csv(
+    file_path: Path, convergence_history: list[int]
+) -> None:
+    """Save convergence history to CSV file.
+
+    Args:
+        file_path: Path where to save the convergence history CSV
+        convergence_history: List of position changes per iteration
+    """
+    with open(file_path, "w") as f:
+        f.write("iteration,position_changes\n")
+        for i, changes in enumerate(convergence_history, 1):
+            f.write(f"{i},{changes}\n")
+
+
+def save_run_parameters_txt(
+    file_path: Path,
+    run_id: str,
+    data_file_path: str,
+    learning_rate: float,
+    max_iterations: int,
+    num_teams: int,
+    enable_perturbation: bool,
+    perturbation_factor: float,
+    iterations: int,
+    convergence_history: list[int],
+) -> None:
+    """Save run parameters to text file.
+
+    Args:
+        file_path: Path where to save the parameters file
+        run_id: Run identifier
+        data_file_path: Path to input data file
+        learning_rate: Learning rate used
+        max_iterations: Maximum iterations allowed
+        num_teams: Number of teams in draft
+        enable_perturbation: Whether perturbation was enabled
+        perturbation_factor: Perturbation factor used
+        iterations: Actual iterations completed
+        convergence_history: History of position changes per iteration
+    """
+    with open(file_path, "w") as f:
+        f.write(f"Run ID: {run_id}\n")
+        f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+        f.write(f"Data file: {data_file_path}\n")
+        f.write(f"Learning rate: {learning_rate}\n")
+        f.write(f"Max iterations: {max_iterations}\n")
+        f.write(f"Number of teams: {num_teams}\n")
+        f.write(f"Perturbation enabled: {enable_perturbation}\n")
+        f.write(f"Perturbation factor: {perturbation_factor}\n")
+        f.write(f"Final iterations: {iterations}\n")
+        f.write(
+            f"Final position changes: {convergence_history[-1] if convergence_history else 'N/A'}\n"
+        )
+
+
+def save_initial_vbr_adp_csv(
+    file_path: Path, initial_adp_data: list[tuple[Player, float, int]]
+) -> None:
+    """Save initial VBR-based ADP values to CSV file.
+
+    Args:
+        file_path: Path where to save the initial ADP CSV
+        initial_adp_data: List of (player, vbr, adp) tuples
+    """
+    # Create initial ADP list for CSV output
+    initial_adp_players = []
+    for player, vbr, adp in initial_adp_data:
+        player_dict = {
+            "name": player.name,
+            "position": player.position,
+            "team": player.team,
+            "avg": player.avg,
+            "total": player.total,
+            "vbr": float(vbr),
+            "adp": float(adp),
+        }
+        initial_adp_players.append(player_dict)
+
+    # Write initial ADP CSV
+    with open(file_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=["name", "position", "team", "avg", "total", "vbr", "adp"]
+        )
+        writer.writeheader()
+        writer.writerows(initial_adp_players)

@@ -195,7 +195,7 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
 ## Phase 4: Main Optimization Loop
 
 ### 4.1 Main Optimizer (`optimal_adp/optimizer.py`)
-- [ ] **`optimize_adp()`**: Main iteration loop
+- [x] **`optimize_adp()`**: Main iteration loop
   1. Load and filter player data
   2. Compute initial VBR-based ADP
   3. For each iteration:
@@ -217,39 +217,39 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
 - [x] Test output file generation
 
 ### 4.4 Validation Module (`optimal_adp/validation.py`)
-- [ ] **Main Validation Functions** accessible via CLI:
+- [x] **Main Validation Functions** accessible via CLI:
   
   **Primary Validation:**
-  - [ ] `validate_convergence()`: Test convergence with configurable learning rate (default 0.1)
-  - [ ] `validate_final_rankings()`: Check final rankings quality
-  - [ ] `validate_optimization()`: Main entry point combining all validations
-  - [ ] Track convergence metrics (position changes per iteration)
-  - [ ] Ensure no divergence or oscillation patterns
-  - [ ] **Optional perturbation testing**: parameter to randomly vary initial VBR rankings slightly
+  - [x] `validate_convergence()`: Test convergence with configurable learning rate (default 0.1)
+  - [x] `validate_final_rankings()`: Check final rankings quality
+  - [x] `validate_optimization()`: Main entry point combining all validations
+  - [x] Track convergence metrics (position changes per iteration)
+  - [x] Ensure no divergence or oscillation patterns
+  - [x] **Optional perturbation testing**: parameter to randomly vary initial VBR rankings slightly
   
   **Final Rankings Quality Checks:**
-  - [ ] **Position hierarchy validation**: Same-position players ranked by AVG score (no inversions)
-  - [ ] **Elite positional players validation**: Top QB, top RB, and top WR all drafted in first round
-  - [ ] **No catastrophic inversions**: No clearly inferior players drafted before vastly superior ones
+  - [x] **Position hierarchy validation**: Same-position players ranked by AVG score (no inversions)
+  - [x] **Elite positional players validation**: Top QB, top RB, and top WR all drafted in first round
+  - [x] **No catastrophic inversions**: No clearly inferior players drafted before vastly superior ones
   
   **CLI Integration:**
-  - [ ] Add `validate` subcommand to main CLI
-  - [ ] Support `--perturb` flag for perturbation testing
-  - [ ] Support `--learning-rate` parameter for validation runs
-  - [ ] Simple pass/fail reporting with summary
+  - [x] Add `validate` subcommand to main CLI
+  - [x] Support `--perturb` flag for perturbation testing
+  - [x] Support `--learning-rate` parameter for validation runs
+  - [x] Simple pass/fail reporting with summary
   
   **Tests for Validation Module:**
-  - [ ] Test validation functions with known good/bad optimization results
-  - [ ] Test perturbation logic produces varied initial conditions
-  - [ ] Test position hierarchy validation catches violations
-  - [ ] Test elite player validation works correctly
-  - [ ] Test CLI integration for validation subcommand
+  - [x] Test validation functions with known good/bad optimization results
+  - [x] Test perturbation logic produces varied initial conditions
+  - [x] Test position hierarchy validation catches violations
+  - [x] Test elite player validation works correctly
+  - [x] Test CLI integration for validation subcommand
 
   **Success Criteria:**
-  - [ ] Validation module passes all checks with default parameters
-  - [ ] Convergence achieved within 1000 iterations
-  - [ ] No position hierarchy violations in final rankings
-  - [ ] Top QB, RB, and WR all land in first round (picks 1-10)
+  - [x] Validation module passes all checks with default parameters
+  - [x] Convergence achieved within 1000 iterations
+  - [x] No position hierarchy violations in final rankings
+  - [x] Top QB, RB, and WR all land in first round (picks 1-10)
 
 ### 4.5 Definition of Done
 ✅ **Phase 4 Complete When:**
@@ -258,8 +258,59 @@ Based on the problem statement and coding guidelines, here's the comprehensive i
 - [x] Pre-commit hooks pass (black, flake8, mypy)
 - [x] Full optimization loop runs end-to-end with real data
 - [x] CLI interface works with argument parsing
-- [ ] **Validation module (4.4) passes all convergence and ranking quality checks**
+- [x] **Validation module (4.4) passes all convergence and ranking quality checks**
 - [x] Progress reporting and logging functional
+
+## Phase 5: Code Refactoring & Organization ✅
+
+### 5.1 Module Restructuring
+- [x] **Consolidate models**: Move `Player`, `Team`, `DraftBoard`, `DraftState` from config.py to new models.py
+- [x] **Eliminate draft_simulator.py**: Move all draft logic into models.py for better OOP design
+- [x] **Enhance data_io.py**: Add comprehensive artifact saving functions (create_run_directory, save_final_adp_csv, save_team_scores_csv, etc.)
+- [x] **Clean up imports**: Update all modules to import from new structure
+
+### 5.2 Object-Oriented Refactoring  
+- [x] **DraftState methods**: Convert standalone functions to instance methods
+  - `generate_snake_order()` → `DraftState.generate_snake_order()`
+  - `simulate_from_pick()` → `DraftState.simulate_from_pick()`
+- [x] **Method integration**: Ensure methods use self properties correctly (self.num_teams, etc.)
+- [x] **Remove helper functions**: Remove standalone `update_adp_from_regret()` in favor of constrained version
+
+### 5.3 Architectural Separation of Concerns
+- [x] **Pure optimization function**: Refactor `optimize_adp()` to accept prepared data (players, initial_adp) and return only algorithmic results
+- [x] **I/O coordination function**: Create `run_optimization_with_validation_and_io()` that handles:
+  - **Step 1**: Load and prepare data (centralized I/O via data_io functions)
+  - **Step 2**: Run pure optimization algorithm  
+  - **Step 3**: Run validation using simplified validation functions
+  - **Step 4**: Save artifacts if requested (centralized I/O)
+  - **Step 5**: Print results and return boolean success/failure
+- [x] **Function migration**: Move `run_optimization_with_validation_and_io()` from process.py to optimizer.py
+- [x] **Validation refactoring**: Split validation into focused helper functions (validate_convergence_criteria, validate_position_hierarchy_results, validate_elite_players_placement)
+
+### 5.4 Test File Consolidation
+- [x] **Merge test files**: Combine test_process.py into test_optimizer.py (17 tests total)
+- [x] **Clean imports**: Resolve duplicate imports from file mergers  
+- [x] **Update test references**: Fix all tests to use new function signatures (optimize_adp now requires players + initial_adp params)
+- [x] **Remove obsolete tests**: Delete test_config.py and test_draft_simulator.py after migration
+- [x] **Add comprehensive I/O tests**: Test artifact generation, parameter validation, exception handling
+
+### 5.5 Code Quality Improvements
+- [x] **Pre-commit compliance**: Ensure all refactored code passes black, flake8, mypy
+- [x] **Import organization**: Clean up circular imports and unused imports
+- [x] **Type annotations**: Maintain proper typing through refactoring (Mock instead of MagicMock, etc.)
+- [x] **Documentation**: Update docstrings for new module organization and function separation
+- [x] **Method patching**: Update test mocks to use patch.object() for instance methods
+
+### 5.6 Definition of Done
+✅ **Phase 5 Complete When:**
+- [x] All 99 tests pass with >90% coverage after refactoring
+- [x] Pre-commit hooks pass on all refactored code  
+- [x] Module structure follows better OOP principles with clear separation of concerns
+- [x] No circular imports or dependency issues
+- [x] Test files properly organized and consolidated
+- [x] Pure optimization algorithm separated from I/O operations
+- [x] Comprehensive artifact generation and validation pipeline established
+- [x] Code organization improved for maintainability and testability
 
 ## Implementation Order Priority
 

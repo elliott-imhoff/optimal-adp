@@ -2,8 +2,7 @@
 
 import logging
 
-from .config import Player
-from .draft_simulator import DraftState, simulate_from_pick
+from .models import DraftState, Player
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +53,7 @@ def calculate_pick_regret(original_draft: DraftState, pick_number: int) -> float
     counterfactual_state.draft_board.drafted_players.add(original_pick_player.name)
 
     # 4. Simulate draft forward from this pick
-    counterfactual_state = simulate_from_pick(counterfactual_state, pick_number)
+    counterfactual_state = counterfactual_state.simulate_from_pick(pick_number)
 
     # 5. Get counterfactual team score
     counterfactual_team = counterfactual_state.teams[team_idx]
@@ -93,41 +92,6 @@ def calculate_all_regrets(draft_state: DraftState) -> dict[str, float]:
 
     logger.info(f"Calculated regret scores for {len(player_regrets)} players")
     return player_regrets
-
-
-def update_adp_from_regret(
-    current_adp: dict[str, float],
-    player_regrets: dict[str, float],
-    learning_rate: float,
-) -> dict[str, float]:
-    """Apply ADP update using raw regret scores directly.
-
-    New_ADP = Old_ADP + η × regret_score
-    Higher regret → later pick (higher ADP number)
-
-    Args:
-        current_adp: Current ADP values for all players
-        player_regrets: Raw regret scores (in fantasy points)
-        learning_rate: Learning rate η (e.g., 0.5)
-
-    Returns:
-        Updated ADP values before rescaling
-    """
-    updated_adp = current_adp.copy()
-
-    for player_name in player_regrets:
-        if player_name in current_adp:
-            old_adp = current_adp[player_name]
-            regret_adjustment = learning_rate * player_regrets[player_name]
-            new_adp = old_adp + regret_adjustment  # Positive regret = later pick
-            updated_adp[player_name] = new_adp
-
-            logger.debug(
-                f"{player_name}: ADP {old_adp:.2f} → {new_adp:.2f} "
-                f"(regret: {player_regrets[player_name]:.3f})"
-            )
-
-    return updated_adp
 
 
 def update_adp_from_regret_constrained(

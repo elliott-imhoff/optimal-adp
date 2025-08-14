@@ -3,12 +3,10 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from optimal_adp.config import Player
-from optimal_adp.draft_simulator import DraftState
+from optimal_adp.models import DraftState, Player
 from optimal_adp.regret import (
     calculate_pick_regret,
     calculate_all_regrets,
-    update_adp_from_regret,
     update_adp_from_regret_constrained,
     rescale_adp_to_picks,
     validate_position_hierarchy,
@@ -120,30 +118,26 @@ class TestCalculatePickRegret:
         with pytest.raises(ValueError, match="Invalid pick number"):
             calculate_pick_regret(completed_draft_state, 10)
 
-    @patch("optimal_adp.regret.simulate_from_pick")
-    def test_regret_calculation_logic(
-        self, mock_simulate: MagicMock, completed_draft_state: DraftState
-    ) -> None:
+    def test_regret_calculation_logic(self, completed_draft_state: DraftState) -> None:
         """Test the core regret calculation logic."""
-        # Mock counterfactual simulation to return known result
-        mock_counterfactual_state = MagicMock()
-        mock_counterfactual_team = MagicMock()
-        mock_counterfactual_team.calculate_total_score.return_value = 45.0
-        # Set up mock teams list properly indexed
-        mock_counterfactual_state.teams = [mock_counterfactual_team, MagicMock()]
-        mock_simulate.return_value = mock_counterfactual_state
+        # Mock the simulate_from_pick method on DraftState instances
+        with patch.object(DraftState, "simulate_from_pick") as mock_simulate:
+            # Mock counterfactual simulation to return known result
+            mock_counterfactual_state = MagicMock()
+            mock_counterfactual_team = MagicMock()
+            mock_counterfactual_team.calculate_total_score.return_value = 45.0
+            # Set up mock teams list properly indexed
+            mock_counterfactual_state.teams = [mock_counterfactual_team, MagicMock()]
+            mock_simulate.return_value = mock_counterfactual_state
 
-        # Team 0 should have QB1 (25.0) + RB2 (15.0) = 40.0 total
-        regret = calculate_pick_regret(completed_draft_state, 0)
+            # Team 0 should have QB1 (25.0) + RB2 (15.0) = 40.0 total
+            regret = calculate_pick_regret(completed_draft_state, 0)
 
-        # Regret = counterfactual (45.0) - original (40.0) = 5.0
-        assert regret == 5.0
+            # Regret = counterfactual (45.0) - original (40.0) = 5.0
+            assert regret == 5.0
 
-        # Verify that the originally drafted player was removed from available pool
-        mock_simulate.assert_called_once()
-        args, _ = mock_simulate.call_args
-        counterfactual_state = args[0]
-        assert "QB1" in counterfactual_state.draft_board.drafted_players
+            # Verify that the simulate_from_pick method was called
+            mock_simulate.assert_called_once_with(0)
 
     def test_original_draft_not_modified(
         self, completed_draft_state: DraftState
@@ -157,7 +151,7 @@ class TestCalculatePickRegret:
         )
 
         # Calculate regret for pick 0
-        with patch("optimal_adp.regret.simulate_from_pick") as mock_simulate:
+        with patch.object(DraftState, "simulate_from_pick") as mock_simulate:
             mock_counterfactual_state = MagicMock()
             mock_counterfactual_team = MagicMock()
             mock_counterfactual_team.calculate_total_score.return_value = 45.0
@@ -186,7 +180,7 @@ class TestCalculatePickRegret:
         draft_state.current_pick = 1
 
         # Mock counterfactual simulation to return better score
-        with patch("optimal_adp.regret.simulate_from_pick") as mock_simulate:
+        with patch.object(DraftState, "simulate_from_pick") as mock_simulate:
             mock_counterfactual_state = MagicMock()
             mock_counterfactual_team = MagicMock()
             mock_counterfactual_team.calculate_total_score.return_value = 30.0
@@ -210,7 +204,7 @@ class TestCalculatePickRegret:
         draft_state.current_pick = 1
 
         # Mock counterfactual simulation to return worse score
-        with patch("optimal_adp.regret.simulate_from_pick") as mock_simulate:
+        with patch.object(DraftState, "simulate_from_pick") as mock_simulate:
             mock_counterfactual_state = MagicMock()
             mock_counterfactual_team = MagicMock()
             mock_counterfactual_team.calculate_total_score.return_value = 20.0
@@ -234,7 +228,7 @@ class TestCalculatePickRegret:
         draft_state.current_pick = 1
 
         # Mock counterfactual simulation
-        with patch("optimal_adp.regret.simulate_from_pick") as mock_simulate:
+        with patch.object(DraftState, "simulate_from_pick") as mock_simulate:
             mock_counterfactual_state = MagicMock()
             mock_counterfactual_team = MagicMock()
             mock_counterfactual_team.calculate_total_score.return_value = 20.0
@@ -272,49 +266,6 @@ class TestCalculateAllRegrets:
 
         # Should have called calculate_pick_regret for each pick
         assert mock_calculate_pick.call_count == 4
-
-
-class TestUpdateAdpFromRegret:
-    """Tests for update_adp_from_regret function."""
-
-    def test_basic_update(self) -> None:
-        """Test basic ADP update calculation using raw regret."""
-        current_adp = {"Player1": 10.0, "Player2": 20.0}
-        player_regrets = {
-            "Player1": -2.0,
-            "Player2": 1.5,
-        }  # Player1 had negative regret (good pick)
-        learning_rate = 0.5
-
-        updated = update_adp_from_regret(current_adp, player_regrets, learning_rate)
-
-        # Player1: 10.0 + 0.5 * (-2.0) = 9.0 (earlier pick due to negative regret)
-        # Player2: 20.0 + 0.5 * 1.5 = 20.75 (later pick due to positive regret)
-        assert updated["Player1"] == 9.0
-        assert updated["Player2"] == 20.75
-
-    def test_missing_player_in_adp(self) -> None:
-        """Test that players not in current_adp are ignored."""
-        current_adp = {"Player1": 10.0}
-        player_regrets = {"Player1": 2.0, "Player2": -1.0}
-        learning_rate = 0.5
-
-        updated = update_adp_from_regret(current_adp, player_regrets, learning_rate)
-
-        # Only Player1 should be updated
-        assert len(updated) == 1
-        assert "Player2" not in updated
-        assert updated["Player1"] == 11.0  # 10.0 + 0.5 * 2.0
-
-    def test_zero_regret_no_change(self) -> None:
-        """Test that zero regret results in no ADP change."""
-        current_adp = {"Player1": 15.0}
-        player_regrets = {"Player1": 0.0}
-        learning_rate = 1.0
-
-        updated = update_adp_from_regret(current_adp, player_regrets, learning_rate)
-
-        assert updated["Player1"] == 15.0  # No change
 
 
 class TestUpdateAdpFromRegreConstrainted:

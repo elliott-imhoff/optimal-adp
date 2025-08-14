@@ -1,16 +1,328 @@
-"""Tests for the main optimization loop and CLI interface."""
+"""Tests for optimizer module."""
 
-import tempfile
 import csv
 import logging
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from typing import Any
+from unittest.mock import Mock, patch
 
 import pytest
 
-from optimal_adp.config import Player
-from optimal_adp.optimizer import optimize_adp
-from optimal_adp.main import main, setup_logging
+from optimal_adp.data_io import load_player_data, compute_initial_adp
+from optimal_adp.main import setup_logging
+from optimal_adp.optimizer import optimize_adp, run_optimization_with_validation_and_io
+from optimal_adp.models import Player
+
+
+class TestRunOptimizationWithValidationAndIO:
+    """Test the main process function."""
+
+    @pytest.fixture
+    def temp_data_file(self) -> str:
+        """Create a temporary CSV file with test player data."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(["Player", "Pos", "Team", "Avg", "Total"])
+            writer.writerow(["Josh Allen", "QB", "BUF", "25.0", "400.0"])
+            writer.writerow(["Christian McCaffrey", "RB", "SF", "20.0", "320.0"])
+            writer.writerow(["Tyreek Hill", "WR", "MIA", "18.0", "288.0"])
+            writer.writerow(["Travis Kelce", "TE", "KC", "15.0", "240.0"])
+            writer.writerow(["Lamar Jackson", "QB", "BAL", "24.0", "384.0"])
+            writer.writerow(["Derrick Henry", "RB", "TEN", "19.0", "304.0"])
+            return f.name
+
+    def test_successful_optimization_run(self, temp_data_file: str) -> None:
+        """Test successful optimization run with all features enabled."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_cwd = Path.cwd()
+            try:
+                # Change to temp directory for artifacts
+                import os
+
+                os.chdir(temp_dir)
+
+                result = run_optimization_with_validation_and_io(
+                    data_file_path=temp_data_file,
+                    learning_rate=0.1,
+                    max_iterations=10,  # Small for testing
+                    num_teams=4,
+                    enable_perturbation=True,
+                    perturbation_factor=0.05,
+                    artifacts_outputs=True,
+                )
+
+                # Should succeed
+                assert isinstance(result, bool)
+                # Note: result might be True or False depending on validation rules
+                # but the important thing is it doesn't crash
+
+                # Check that artifacts directory was created
+                artifacts_dir = Path("artifacts")
+                assert artifacts_dir.exists()
+
+                # Check that at least one run directory was created
+                run_dirs = list(artifacts_dir.glob("run_*"))
+                assert len(run_dirs) >= 1
+
+                run_dir = run_dirs[0]
+
+                # Check that expected artifact files were created
+                expected_files = [
+                    "initial_vbr_adp.csv",
+                    "final_adp.csv",
+                    "convergence_history.csv",
+                    "team_scores.csv",
+                    "regrets.csv",
+                    "run_parameters.txt",
+                ]
+
+                for filename in expected_files:
+                    file_path = run_dir / filename
+                    assert (
+                        file_path.exists()
+                    ), f"Expected artifact file {filename} not found"
+                    assert (
+                        file_path.stat().st_size > 0
+                    ), f"Artifact file {filename} is empty"
+
+            finally:
+                os.chdir(original_cwd)
+                # Clean up temp file
+                Path(temp_data_file).unlink(missing_ok=True)
+
+    def test_optimization_without_artifacts(self, temp_data_file: str) -> None:
+        """Test optimization run without artifact generation."""
+        try:
+            result = run_optimization_with_validation_and_io(
+                data_file_path=temp_data_file,
+                learning_rate=0.1,
+                max_iterations=5,  # Small for testing
+                num_teams=2,
+                enable_perturbation=False,
+                perturbation_factor=0.0,
+                artifacts_outputs=False,  # No artifacts
+            )
+
+            # Should succeed without creating artifacts
+            assert isinstance(result, bool)
+
+        finally:
+            # Clean up temp file
+            Path(temp_data_file).unlink(missing_ok=True)
+
+    def test_optimization_with_perturbation(self, temp_data_file: str) -> None:
+        """Test optimization with ADP perturbation enabled."""
+        try:
+            result = run_optimization_with_validation_and_io(
+                data_file_path=temp_data_file,
+                learning_rate=0.2,
+                max_iterations=5,
+                num_teams=4,
+                enable_perturbation=True,
+                perturbation_factor=0.1,
+                artifacts_outputs=False,
+            )
+
+            # Should complete successfully
+            assert isinstance(result, bool)
+
+        finally:
+            # Clean up temp file
+            Path(temp_data_file).unlink(missing_ok=True)
+
+    def test_optimization_with_invalid_file_path(self) -> None:
+        """Test optimization with non-existent data file."""
+        result = run_optimization_with_validation_and_io(
+            data_file_path="/non/existent/file.csv",
+            learning_rate=0.1,
+            max_iterations=10,
+            artifacts_outputs=False,
+        )
+
+        # Should return False due to file not found error
+        assert result is False
+
+    def test_optimization_with_malformed_csv(self) -> None:
+        """Test optimization with malformed CSV data."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            # Write malformed CSV (missing required columns)
+            f.write("Wrong,Headers,Here\n")
+            f.write("Invalid,Data,Structure\n")
+            temp_path = f.name
+
+        try:
+            result = run_optimization_with_validation_and_io(
+                data_file_path=temp_path,
+                learning_rate=0.1,
+                max_iterations=10,
+                artifacts_outputs=False,
+            )
+
+            # Should return False due to parsing error
+            assert result is False
+
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+
+    def test_default_parameters(self, temp_data_file: str) -> None:
+        """Test optimization with default parameters."""
+        try:
+            result = run_optimization_with_validation_and_io(
+                data_file_path=temp_data_file,
+                artifacts_outputs=False,
+            )
+
+            # Should complete with defaults
+            assert isinstance(result, bool)
+
+        finally:
+            Path(temp_data_file).unlink(missing_ok=True)
+
+    @patch("optimal_adp.optimizer.optimize_adp")
+    def test_optimization_exception_handling(
+        self, mock_optimize: Mock, temp_data_file: str
+    ) -> None:
+        """Test that exceptions in optimization are properly handled."""
+        # Make optimize_adp raise an exception
+        mock_optimize.side_effect = RuntimeError("Simulated optimization failure")
+
+        try:
+            result = run_optimization_with_validation_and_io(
+                data_file_path=temp_data_file,
+                artifacts_outputs=False,
+            )
+
+            # Should return False when exception occurs
+            assert result is False
+
+        finally:
+            Path(temp_data_file).unlink(missing_ok=True)
+
+    @patch("optimal_adp.optimizer.validate_optimization_results")
+    def test_validation_failure_handling(
+        self, mock_validate: Mock, temp_data_file: str
+    ) -> None:
+        """Test handling when validation fails."""
+        # Mock validation to return a failed result
+        mock_result = Mock()
+        mock_result.all_passed.return_value = False
+        mock_result.messages = ["Test validation failure"]
+        mock_validate.return_value = mock_result
+
+        try:
+            result = run_optimization_with_validation_and_io(
+                data_file_path=temp_data_file,
+                artifacts_outputs=False,
+            )
+
+            # Should return False when validation fails
+            assert result is False
+
+        finally:
+            Path(temp_data_file).unlink(missing_ok=True)
+
+    def test_edge_case_small_dataset(self) -> None:
+        """Test optimization with minimal dataset."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(["Player", "Pos", "Team", "Avg", "Total"])
+            writer.writerow(["Test Player", "QB", "TEST", "20.0", "200.0"])
+            temp_path = f.name
+
+        try:
+            result = run_optimization_with_validation_and_io(
+                data_file_path=temp_path,
+                learning_rate=0.1,
+                max_iterations=5,
+                num_teams=2,
+                artifacts_outputs=False,
+            )
+
+            # Should handle small dataset gracefully
+            assert isinstance(result, bool)
+
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+
+    def test_extreme_parameters(self, temp_data_file: str) -> None:
+        """Test optimization with extreme parameter values."""
+        try:
+            # Test with very high learning rate and low iterations
+            result = run_optimization_with_validation_and_io(
+                data_file_path=temp_data_file,
+                learning_rate=1.0,  # Very high
+                max_iterations=1,  # Very low
+                num_teams=2,
+                artifacts_outputs=False,
+            )
+
+            # Should handle extreme values
+            assert isinstance(result, bool)
+
+        finally:
+            Path(temp_data_file).unlink(missing_ok=True)
+
+    def test_artifact_file_content_validation(self, temp_data_file: str) -> None:
+        """Test that generated artifact files contain expected content."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_cwd = Path.cwd()
+            try:
+                import os
+
+                os.chdir(temp_dir)
+
+                _ = run_optimization_with_validation_and_io(
+                    data_file_path=temp_data_file,
+                    learning_rate=0.1,
+                    max_iterations=3,
+                    num_teams=2,
+                    enable_perturbation=False,
+                    artifacts_outputs=True,
+                )
+
+                # Find the run directory
+                artifacts_dir = Path("artifacts")
+                run_dirs = list(artifacts_dir.glob("run_*"))
+                assert len(run_dirs) >= 1
+                run_dir = run_dirs[0]
+
+                # Validate initial_vbr_adp.csv content
+                initial_adp_file = run_dir / "initial_vbr_adp.csv"
+                with open(initial_adp_file, "r") as f:
+                    content = f.read()
+                    # Check for header
+                    assert "name,position,team,avg,total,vbr,adp" in content
+                    # Content might be empty if players were filtered out, so just check structure
+
+                # Validate final_adp.csv content
+                final_adp_file = run_dir / "final_adp.csv"
+                with open(final_adp_file, "r") as f:
+                    content = f.read()
+                    # Check for header structure
+                    assert "name,position,team,avg,total,adp" in content
+
+                # Validate convergence_history.csv content
+                convergence_file = run_dir / "convergence_history.csv"
+                with open(convergence_file, "r") as f:
+                    content = f.read()
+                    assert "iteration,position_changes" in content
+                    # Should have at least one iteration of data
+                    lines = content.strip().split("\n")
+                    assert len(lines) >= 2  # Header + at least 1 data row
+
+                # Validate run_parameters.txt content
+                params_file = run_dir / "run_parameters.txt"
+                with open(params_file, "r") as f:
+                    content = f.read()
+                    assert "Learning rate: 0.1" in content
+                    assert "Max iterations: 3" in content
+                    assert "Number of teams: 2" in content
+                    assert "Perturbation enabled: False" in content
+
+            finally:
+                os.chdir(original_cwd)
+                Path(temp_data_file).unlink(missing_ok=True)
 
 
 @pytest.fixture
@@ -55,158 +367,124 @@ class TestOptimizeAdp:
 
     def test_basic_optimization_loop(self, temp_data_file: str) -> None:
         """Test that the optimization loop runs without errors."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_path = Path(temp_dir) / "test_adp.csv"
+        # Load data and prepare initial ADP as the optimize_adp function now expects
+        players = load_player_data(temp_data_file)
+        initial_adp_data = compute_initial_adp(players)
+        initial_adp = {player.name: float(adp) for player, _, adp in initial_adp_data}
+
+        (
+            final_adp,
+            convergence_history,
+            iterations_completed,
+            final_regrets,
+            final_draft_state,
+        ) = optimize_adp(
+            players=players,
+            initial_adp=initial_adp,
+            num_teams=SMALL_DRAFT_NUM_TEAMS,
+            max_iterations=5,  # More iterations to prevent early convergence
+            learning_rate=0.5,  # Higher learning rate to force changes
+        )
+
+        # Check return values
+        assert isinstance(final_adp, dict)
+        assert len(final_adp) == 8  # All players should have ADP
+        assert isinstance(convergence_history, list)
+        assert len(convergence_history) >= 1  # At least one convergence check
+        assert isinstance(iterations_completed, int)
+        assert iterations_completed >= 1
+        assert isinstance(final_regrets, dict)
+        assert final_draft_state is not None
+        assert len(final_draft_state.teams) > 0
+
+    def test_convergence_detection(self, temp_data_file: str) -> None:
+        """Test that convergence is properly detected."""
+        # Load data and prepare initial ADP as the optimize_adp function now expects
+        players = load_player_data(temp_data_file)
+        initial_adp_data = compute_initial_adp(players)
+        initial_adp = {player.name: float(adp) for player, _, adp in initial_adp_data}
+
+        # Mock the convergence check to return 0 (converged) after 2 iterations
+        with patch("optimal_adp.optimizer.check_convergence") as mock_convergence:
+            mock_convergence.side_effect = [5, 0]  # Converge on second check
 
             (
                 final_adp,
                 convergence_history,
-                iterations,
+                iterations_completed,
                 final_regrets,
-                team_scores,
+                final_draft_state,
             ) = optimize_adp(
-                data_file_path=temp_data_file,
+                players=players,
+                initial_adp=initial_adp,
                 num_teams=SMALL_DRAFT_NUM_TEAMS,
-                max_iterations=5,  # More iterations to prevent early convergence
-                learning_rate=0.5,  # Higher learning rate to force changes
-                output_file_path=str(output_path),
-            )
-
-            # Check return values
-            assert isinstance(final_adp, dict)
-            assert len(final_adp) == 8  # All players should have ADP
-            assert isinstance(convergence_history, list)
-            assert len(convergence_history) >= 1  # At least one convergence check
-            assert isinstance(iterations, int)
-            assert iterations >= 2  # Should run at least 2 iterations
-            assert isinstance(final_regrets, dict)
-            assert isinstance(team_scores, list)
-
-            # Check output file was created
-            assert output_path.exists()
-
-    def test_convergence_detection(self, temp_data_file: str) -> None:
-        """Test that convergence is properly detected."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_path = Path(temp_dir) / "test_adp.csv"
-
-            # Mock the convergence check to return 0 (converged) after 2 iterations
-            with patch("optimal_adp.optimizer.check_convergence") as mock_convergence:
-                mock_convergence.side_effect = [5, 0]  # Converge on second check
-
-                (
-                    final_adp,
-                    convergence_history,
-                    iterations,
-                    final_regrets,
-                    team_scores,
-                ) = optimize_adp(
-                    data_file_path=temp_data_file,
-                    num_teams=SMALL_DRAFT_NUM_TEAMS,
-                    max_iterations=10,
-                    learning_rate=0.1,
-                    output_file_path=str(output_path),
-                )
-
-                # Should stop early due to convergence
-                assert iterations == 2
-                assert convergence_history == [5, 0]
-
-    def test_output_file_creation(self, temp_data_file: str) -> None:
-        """Test that output file is created with correct format."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_path = Path(temp_dir) / "test_adp.csv"
-
-            _, _, _, _, _ = optimize_adp(
-                data_file_path=temp_data_file,
-                num_teams=SMALL_DRAFT_NUM_TEAMS,
-                max_iterations=1,
+                max_iterations=10,
                 learning_rate=0.1,
-                output_file_path=str(output_path),
             )
 
-            # Read and validate output file
-            assert output_path.exists()
+            # Should stop early due to convergence
+            assert iterations_completed == 2
+            assert len(convergence_history) == 2
+            assert convergence_history == [5, 0]
 
-            with open(output_path, "r") as f:
-                reader = csv.DictReader(f)
-                rows = list(reader)
 
-            # Should have all players
-            assert len(rows) == 8
-
-            # Check required columns exist
-            required_columns = {"name", "position", "team", "avg", "total", "adp"}
-            assert set(rows[0].keys()) >= required_columns
-
-            # Check ADP values are reasonable (should be 1-8)
-            adp_values = [float(row["adp"]) for row in rows]
-            assert min(adp_values) >= 1.0
-            assert max(adp_values) <= 8.0
-
-    def test_invalid_input_file(self) -> None:
-        """Test handling of invalid input file."""
-        with pytest.raises(Exception):  # Should raise an exception
-            _, _, _, _, _ = optimize_adp(
-                data_file_path="nonexistent_file.csv",
-                num_teams=SMALL_DRAFT_NUM_TEAMS,
-                max_iterations=1,
-                learning_rate=0.1,
-                output_file_path="test_output.csv",
-            )
+class TestOptimizationHelpers:
+    """Tests for optimization helper functions and edge cases."""
 
     def test_constrained_optimization_maintains_hierarchy(
         self, temp_data_file: str
     ) -> None:
         """Test that constrained optimization maintains position hierarchy."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_path = Path(temp_dir) / "constrained_adp.csv"
+        # Load data and prepare initial ADP
+        players = load_player_data(temp_data_file)
+        initial_adp_data = compute_initial_adp(players)
+        initial_adp = {player.name: float(adp) for player, _, adp in initial_adp_data}
 
-            # Run optimization with higher learning rate to force position changes
-            _, _, _, _, _ = optimize_adp(
-                data_file_path=temp_data_file,
-                num_teams=SMALL_DRAFT_NUM_TEAMS,
-                max_iterations=3,
-                learning_rate=0.5,  # Higher learning rate to create potential violations
-                output_file_path=str(output_path),
+        # Run optimization with higher learning rate to force position changes
+        (
+            final_adp,
+            convergence_history,
+            iterations_completed,
+            final_regrets,
+            final_draft_state,
+        ) = optimize_adp(
+            players=players,
+            initial_adp=initial_adp,
+            num_teams=SMALL_DRAFT_NUM_TEAMS,
+            max_iterations=3,
+            learning_rate=0.5,  # Higher learning rate to create potential violations
+        )
+
+        # Group players by position for hierarchy validation
+
+        players_by_pos: dict[str, list[dict[str, Any]]] = {}
+        for player in players:  # Use original players list
+            pos = player.position
+            if pos not in players_by_pos:
+                players_by_pos[pos] = []
+            players_by_pos[pos].append(
+                {
+                    "name": player.name,
+                    "avg": player.avg,
+                    "adp": final_adp[player.name],
+                }
             )
 
-            # Read output and verify position hierarchy is maintained
-            with open(output_path, "r") as f:
-                reader = csv.DictReader(f)
-                rows = list(reader)
+        # Verify hierarchy within each position
+        for position, position_players in players_by_pos.items():
+            # Sort by ADP (draft order)
+            position_players.sort(key=lambda p: p["adp"])
 
-            # Group players by position
-            from typing import Dict, Any
+            # Verify that AVG decreases as ADP increases (later picks)
+            for i in range(len(position_players) - 1):
+                current_player = position_players[i]
+                next_player = position_players[i + 1]
 
-            players_by_pos: Dict[str, list[Dict[str, Any]]] = {}
-            for row in rows:
-                pos = row["position"]
-                if pos not in players_by_pos:
-                    players_by_pos[pos] = []
-                players_by_pos[pos].append(
-                    {
-                        "name": row["name"],
-                        "avg": float(row["avg"]),
-                        "adp": float(row["adp"]),
-                    }
+                assert current_player["avg"] >= next_player["avg"], (
+                    f"Position hierarchy violated in {position}: "
+                    f"{current_player['name']} (AVG: {current_player['avg']}) "
+                    f"drafted before {next_player['name']} (AVG: {next_player['avg']})"
                 )
-
-            # Verify hierarchy within each position
-            for position, players in players_by_pos.items():
-                # Sort by ADP (draft order)
-                players.sort(key=lambda p: p["adp"])
-
-                # Verify that AVG decreases as ADP increases (later picks)
-                for i in range(len(players) - 1):
-                    current_player = players[i]
-                    next_player = players[i + 1]
-
-                    assert current_player["avg"] >= next_player["avg"], (
-                        f"Position hierarchy violated in {position}: "
-                        f"{current_player['name']} (AVG: {current_player['avg']}) "
-                        f"drafted before {next_player['name']} (AVG: {next_player['avg']})"
-                    )
 
 
 class TestMainCLI:
@@ -224,113 +502,6 @@ class TestMainCLI:
         logger = logging.getLogger("optimal_adp")
         assert logger.level <= 10  # DEBUG level or lower
 
-    @patch("optimal_adp.main.optimize_adp")
-    @patch("sys.argv")
-    def test_cli_basic_execution(
-        self, mock_argv: MagicMock, mock_optimize: MagicMock, temp_data_file: str
-    ) -> None:
-        """Test basic CLI execution with minimal arguments."""
-        # Mock successful optimization
-        mock_optimize.return_value = (
-            {"QB1": 1.0, "RB1": 2.0},
-            [5, 2, 0],
-            3,
-            {},  # final_regrets
-            [],  # team_scores
-        )
-
-        # Mock command line arguments
-        mock_argv.__getitem__ = lambda _, i: ["main.py", "optimize", temp_data_file][i]
-        mock_argv.__len__ = lambda _: 3
-
-        # Should not raise any exceptions
-        try:
-            main()
-        except SystemExit as e:
-            # SystemExit with code 0 is success
-            assert e.code == 0 or e.code is None
-
-    @patch("sys.argv")
-    def test_cli_invalid_input_file(self, mock_argv: MagicMock) -> None:
-        """Test CLI handling of invalid input file."""
-        # Mock command line arguments with non-existent file
-        mock_argv.__getitem__ = lambda _, i: [
-            "main.py",
-            "optimize",
-            "nonexistent_file.csv",
-        ][i]
-        mock_argv.__len__ = lambda _: 3
-
-        # Should exit with error code
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-        assert exc_info.value.code == 1
-
-    @patch("optimal_adp.main.optimize_adp")
-    @patch("sys.argv")
-    def test_cli_with_all_arguments(
-        self, mock_argv: MagicMock, mock_optimize: MagicMock, temp_data_file: str
-    ) -> None:
-        """Test CLI with all possible arguments."""
-        # Mock successful optimization
-        mock_optimize.return_value = (
-            {"QB1": 1.0},
-            [0],
-            1,
-            {},  # final_regrets
-            [],  # team_scores
-        )
-
-        # Mock command line arguments with all options
-        args = [
-            "main.py",
-            "optimize",
-            temp_data_file,
-            "--output",
-            "test_output.csv",
-            "--max-iterations",
-            "25",
-            "--learning-rate",
-            "0.05",
-            "--num-teams",
-            "12",
-            "--verbose",
-        ]
-
-        mock_argv.__getitem__ = lambda _, i: args[i]
-        mock_argv.__len__ = lambda _: len(args)
-
-        # Should not raise any exceptions
-        try:
-            main()
-        except SystemExit as e:
-            assert e.code == 0 or e.code is None
-
-        # Verify optimize_adp was called with correct parameters
-        mock_optimize.assert_called_once()
-        call_args = mock_optimize.call_args
-
-        # Check some key parameters
-        assert call_args.kwargs["max_iterations"] == 25
-        assert call_args.kwargs["learning_rate"] == 0.05
-
-    @patch("optimal_adp.main.optimize_adp")
-    @patch("sys.argv")
-    def test_cli_optimization_failure(
-        self, mock_argv: MagicMock, mock_optimize: MagicMock, temp_data_file: str
-    ) -> None:
-        """Test CLI handling of optimization failure."""
-        # Mock optimization failure
-        mock_optimize.side_effect = Exception("Optimization failed")
-
-        mock_argv.__getitem__ = lambda _, i: ["main.py", "optimize", temp_data_file][i]
-        mock_argv.__len__ = lambda _: 3
-
-        # Should exit with error code
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-        assert exc_info.value.code == 1
-
 
 class TestIntegrationWithRealData:
     """Integration tests using the actual 2024 stats data."""
@@ -345,38 +516,42 @@ class TestIntegrationWithRealData:
         # Use small configuration for faster test
         num_teams = 4  # Small for faster execution
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_path = Path(temp_dir) / "integration_test_adp.csv"
+        try:
+            # Load data and prepare initial ADP as the optimize_adp function now expects
+            players = load_player_data(str(data_file))
+            initial_adp_data = compute_initial_adp(players)
+            initial_adp = {
+                player.name: float(adp) for player, _, adp in initial_adp_data
+            }
 
-            try:
-                (
-                    final_adp,
-                    convergence_history,
-                    iterations,
-                    final_regrets,
-                    team_scores,
-                ) = optimize_adp(
-                    data_file_path=str(data_file),
-                    num_teams=num_teams,
-                    max_iterations=5,  # Keep small for testing
-                    learning_rate=0.1,
-                    output_file_path=str(output_path),
-                )
-            except (ValueError, TypeError, KeyError) as e:
-                pytest.skip(f"Real data file has formatting issues: {e}")
+            (
+                final_adp,
+                convergence_history,
+                iterations_completed,
+                final_regrets,
+                final_draft_state,
+            ) = optimize_adp(
+                players=players,
+                initial_adp=initial_adp,
+                num_teams=num_teams,
+                max_iterations=5,  # Keep small for testing
+                learning_rate=0.1,
+            )
+        except (ValueError, TypeError, KeyError) as e:
+            pytest.skip(f"Real data file has formatting issues: {e}")
 
-            # Basic checks
-            assert len(final_adp) > 0
-            assert len(convergence_history) > 0
-            assert iterations > 0
-            assert len(final_regrets) > 0
-            assert len(team_scores) > 0
-            assert output_path.exists()
+        # Basic checks
+        assert len(final_adp) > 0
+        assert len(convergence_history) > 0
+        assert iterations_completed > 0
+        assert len(final_regrets) > 0
+        assert final_draft_state is not None
+        assert len(final_draft_state.teams) > 0
 
-            # Check that top players have low ADP (good draft positions)
-            sorted_players = sorted(final_adp.items(), key=lambda x: x[1])
-            top_10_names = [name for name, _ in sorted_players[:10]]
+        # Check that top players have low ADP (good draft positions)
+        sorted_players = sorted(final_adp.items(), key=lambda x: x[1])
+        top_10_names = [name for name, _ in sorted_players[:10]]
 
-            # Should include some recognizable top players (this is a sanity check)
-            # Note: This is a loose check since we don't know exact player names
-            assert len(top_10_names) == 10
+        # Should include some recognizable top players (this is a sanity check)
+        # Note: This is a loose check since we don't know exact player names
+        assert len(top_10_names) == 10

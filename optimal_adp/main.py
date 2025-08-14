@@ -5,9 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
-from optimal_adp.config import get_total_rounds, get_total_picks
-from optimal_adp.optimizer import optimize_adp
-from optimal_adp.validation import validate_optimization
+from optimal_adp.optimizer import run_optimization_with_validation_and_io
 
 
 # ANSI color codes
@@ -75,69 +73,6 @@ def setup_logging(verbose: bool = False) -> None:
     root_logger.addHandler(handler)
 
 
-def cmd_optimize(args: argparse.Namespace) -> None:
-    """Handle the optimize subcommand."""
-    # Setup logging
-    setup_logging(args.verbose)
-    logger = logging.getLogger(__name__)
-
-    # Validate input file exists
-    data_file_path = Path(args.data_file)
-    if not data_file_path.exists():
-        logger.error(f"Input file does not exist: {data_file_path}")
-        sys.exit(1)
-
-    # Create output directory if needed
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Get draft configuration values
-    num_teams = args.num_teams
-
-    logger.info("Starting ADP optimization with configuration:")
-    logger.info(f"  Input file: {data_file_path}")
-    logger.info(f"  Output file: {output_path}")
-    logger.info(
-        f"  Draft config: {num_teams} teams, "
-        f"{get_total_rounds()} rounds, {get_total_picks(num_teams)} total picks"
-    )
-
-    try:
-        # Run optimization
-        (
-            final_adp,
-            convergence_history,
-            iterations,
-            final_regrets,
-            team_scores,
-        ) = optimize_adp(
-            data_file_path=str(data_file_path),
-            num_teams=num_teams,
-            max_iterations=args.max_iterations,
-            learning_rate=args.learning_rate,
-            output_file_path=str(output_path),
-        )
-
-        # Print summary
-        logger.info("Optimization completed successfully!")
-        logger.info(f"Final ADP computed for {len(final_adp)} players")
-        logger.info(f"Iterations completed: {iterations}")
-        logger.info(f"Convergence history: {convergence_history}")
-        logger.info(f"Final regrets calculated for {len(final_regrets)} players")
-        logger.info(f"Team scores calculated for {len(team_scores)} teams")
-
-        if convergence_history and convergence_history[-1] == 0:
-            logger.info("✅ Convergence achieved!")
-        else:
-            logger.info("⚠️  Maximum iterations reached without full convergence")
-
-    except Exception as e:
-        logger.error(f"Optimization failed: {e}")
-        if args.verbose:
-            logger.exception("Full error traceback:")
-        sys.exit(1)
-
-
 def cmd_validate(args: argparse.Namespace) -> None:
     """Handle the validate subcommand."""
     # Setup logging
@@ -150,12 +85,12 @@ def cmd_validate(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Run validation
-    success = validate_optimization(
+    success = run_optimization_with_validation_and_io(
         data_file_path=str(data_file_path),
         learning_rate=args.learning_rate,
         max_iterations=args.max_iterations,
         num_teams=args.num_teams,
-        enable_perturbation=args.perturb,
+        enable_perturbation=args.perturbation_factor > 0,
         perturbation_factor=args.perturbation_factor,
         artifacts_outputs=not args.no_artifacts,
     )
@@ -172,48 +107,6 @@ def main() -> None:
     # Create subcommands
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     subparsers.required = True
-
-    # Optimize subcommand
-    optimize_parser = subparsers.add_parser("optimize", help="Run ADP optimization")
-
-    # Required arguments for optimize
-    optimize_parser.add_argument(
-        "data_file", help="Path to CSV file containing player statistics"
-    )
-
-    # Optional arguments for optimize
-    optimize_parser.add_argument(
-        "--output",
-        default="artifacts/final_adp.csv",
-        help="Output path for final ADP results (default: artifacts/final_adp.csv)",
-    )
-
-    optimize_parser.add_argument(
-        "--max-iterations",
-        type=int,
-        default=1000,
-        help="Maximum number of optimization iterations (default: 1000)",
-    )
-
-    optimize_parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=0.1,
-        help="Learning rate for ADP updates (default: 0.1)",
-    )
-
-    optimize_parser.add_argument(
-        "--num-teams",
-        type=int,
-        default=10,
-        help="Number of teams in the draft (default: 10)",
-    )
-
-    optimize_parser.add_argument(
-        "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging"
-    )
-
-    optimize_parser.set_defaults(func=cmd_optimize)
 
     # Validate subcommand
     validate_parser = subparsers.add_parser(
@@ -248,16 +141,10 @@ def main() -> None:
     )
 
     validate_parser.add_argument(
-        "--perturb",
-        action="store_true",
-        help="Apply random perturbation to initial ADP values",
-    )
-
-    validate_parser.add_argument(
         "--perturbation-factor",
         type=float,
-        default=0.1,
-        help="Perturbation factor for initial ADP (default: 0.1 = 10 percent)",
+        default=0.0,
+        help="Perturbation factor for initial ADP (default: 0.0 = no perturbation)",
     )
 
     validate_parser.add_argument(

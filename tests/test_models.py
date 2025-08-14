@@ -1,18 +1,23 @@
 """Tests for draft simulation engine."""
 
-from optimal_adp.config import Player, Team, generate_snake_order
-from optimal_adp.draft_simulator import (
+from optimal_adp.models import (
     DraftBoard,
     DraftState,
-    make_greedy_pick,
+    Player,
+    Team,
     simulate_full_draft,
-    simulate_from_pick,
 )
+from optimal_adp.config import NUM_TEAMS
 
 
 def test_generate_snake_order() -> None:
     """Test snake order generation for 10 teams, 10 rounds."""
-    order = generate_snake_order(num_teams=10)
+    # Create a DraftState with 10 teams to test the snake order generation
+    players = [Player("Test Player", "QB", "TEST", 20.0, 340.0)]
+    adp_mapping = {"Test Player": 1.0}
+
+    draft_state = DraftState(players, adp_mapping, num_teams=10)
+    order = draft_state.generate_snake_order()
 
     # Should have 100 picks total (10 teams × 10 rounds)
     assert len(order) == 100  # First round should be 0-9
@@ -30,16 +35,17 @@ def test_generate_snake_order() -> None:
 
 def test_generate_snake_order_small() -> None:
     """Test snake order for smaller draft (4 teams, 3 rounds)."""
-    # Test the snake logic manually for 3 rounds
-    pick_order: list[int] = []
-    for round_num in range(3):
-        if round_num % 2 == 0:  # Even rounds: normal order
-            pick_order.extend(range(4))
-        else:  # Odd rounds: reverse order
-            pick_order.extend(range(3, -1, -1))
+    # Create a DraftState with 4 teams to test the snake order generation
+    players = [Player("Test Player", "QB", "TEST", 20.0, 340.0)]
+    adp_mapping = {"Test Player": 1.0}
 
-    expected = [0, 1, 2, 3, 3, 2, 1, 0, 0, 1, 2, 3]
-    assert pick_order == expected
+    draft_state = DraftState(players, adp_mapping, num_teams=4)
+    order = draft_state.generate_snake_order()
+
+    # For 4 teams with our roster configuration, should get expected length
+    # Test the pattern for first few rounds
+    expected_start = [0, 1, 2, 3, 3, 2, 1, 0, 0, 1, 2, 3]
+    assert order[:12] == expected_start
 
 
 def test_can_draft_player_qb() -> None:
@@ -230,7 +236,7 @@ def test_make_greedy_pick() -> None:
     state = DraftState(players, adp_mapping)
 
     # First pick should be QB1 (lowest ADP)
-    picked_player = make_greedy_pick(state)
+    picked_player = state.make_greedy_pick()
     assert picked_player.name == "QB1"
 
     # Draft state should be updated
@@ -255,7 +261,7 @@ def test_greedy_pick_tie_breaker() -> None:
     state = DraftState(players, adp_mapping)
 
     # Should pick QB2 (higher avg as tie-breaker)
-    picked_player = make_greedy_pick(state)
+    picked_player = state.make_greedy_pick()
     assert picked_player.name == "QB2"
 
 
@@ -270,7 +276,7 @@ def test_draft_state_cloning() -> None:
     original_state = DraftState(players, adp_mapping)
 
     # Make a pick
-    make_greedy_pick(original_state)
+    original_state.make_greedy_pick()
 
     # Clone the state
     cloned_state = original_state.clone()
@@ -285,7 +291,7 @@ def test_draft_state_cloning() -> None:
     assert len(cloned_state.draft_history) == len(original_state.draft_history)
 
     # Modifying clone shouldn't affect original
-    make_greedy_pick(cloned_state)
+    cloned_state.make_greedy_pick()
     assert cloned_state.current_pick == 2
     assert original_state.current_pick == 1
 
@@ -302,9 +308,9 @@ def test_draft_state_rewind() -> None:
     state = DraftState(players, adp_mapping)
 
     # Make 3 picks
-    make_greedy_pick(state)  # Pick 0
-    make_greedy_pick(state)  # Pick 1
-    make_greedy_pick(state)  # Pick 2
+    state.make_greedy_pick()  # Pick 0
+    state.make_greedy_pick()  # Pick 1
+    state.make_greedy_pick()  # Pick 2
 
     assert state.current_pick == 3
     assert len(state.draft_history) == 3
@@ -334,13 +340,13 @@ def test_simulate_from_pick() -> None:
     state = DraftState(players, adp_mapping)
 
     # Make 2 picks manually
-    make_greedy_pick(state)  # Pick 0
-    make_greedy_pick(state)  # Pick 1
+    state.make_greedy_pick()  # Pick 0
+    state.make_greedy_pick()  # Pick 1
 
     assert state.current_pick == 2
 
     # Continue simulation from pick 2
-    final_state = simulate_from_pick(state, 2)
+    final_state = state.simulate_from_pick(2)
 
     # Should have made 2 more picks (limited by available players)
     assert final_state.current_pick == 4
@@ -478,3 +484,80 @@ def test_team_calculate_total_score() -> None:
     assert (
         abs(total_score - expected_score) < 0.001
     )  # Account for floating point precision
+
+
+def test_player_dataclass() -> None:
+    """Test Player dataclass creation and attributes."""
+    player = Player(name="Josh Allen", position="QB", team="BUF", avg=22.6, total=385.0)
+
+    assert player.name == "Josh Allen"
+    assert player.position == "QB"
+    assert player.team == "BUF"
+    assert player.avg == 22.6
+    assert player.total == 385.0
+
+
+def test_team_dataclass() -> None:
+    """Test Team dataclass for roster tracking."""
+    # Test creating empty team
+    team = Team(
+        team_id=0,
+        qb_slots=[None, None],  # 2 QB slots
+        rb_slots=[None, None],  # 2 RB slots
+        wr_slots=[None, None, None],  # 3 WR slots
+        te_slots=[None],  # 1 TE slot
+        flex_slots=[None, None],  # 2 FLEX slots
+    )
+
+    assert team.team_id == 0
+    assert len(team.qb_slots) == 2
+    assert len(team.rb_slots) == 2
+    assert len(team.wr_slots) == 3
+    assert len(team.te_slots) == 1
+    assert len(team.flex_slots) == 2
+    assert all(slot is None for slot in team.qb_slots)
+
+
+def test_team_auto_init() -> None:
+    """Test Team dataclass auto-initialization of empty slots."""
+    team = Team(
+        team_id=1, qb_slots=[], rb_slots=[], wr_slots=[], te_slots=[], flex_slots=[]
+    )
+
+    assert len(team.qb_slots) == 2
+    assert len(team.rb_slots) == 2
+    assert len(team.wr_slots) == 3
+    assert len(team.te_slots) == 1
+    assert len(team.flex_slots) == 2
+    assert all(
+        slot is None
+        for slot in team.qb_slots
+        + team.rb_slots
+        + team.wr_slots
+        + team.te_slots
+        + team.flex_slots
+    )
+
+
+def test_draft_functions() -> None:
+    """Test draft configuration functions."""
+    # Test global NUM_TEAMS
+    assert NUM_TEAMS == 10
+
+    # Test snake order generation through DraftState
+    players = [Player("Test Player", "QB", "TEST", 20.0, 340.0)]
+    adp_mapping = {"Test Player": 1.0}
+    draft_state = DraftState(players, adp_mapping, num_teams=4)
+    snake_order = draft_state.generate_snake_order()
+
+    expected_length = 40  # 4 teams × 10 roster slots
+    assert len(snake_order) == expected_length
+
+    # Test first few picks are in correct snake pattern
+    assert snake_order[0] == 0  # First pick: team 0
+    assert snake_order[1] == 1  # Second pick: team 1
+    assert snake_order[2] == 2  # Third pick: team 2
+    assert snake_order[3] == 3  # Fourth pick: team 3
+    # Snake back
+    assert snake_order[4] == 3  # Fifth pick: team 3 (reverse order)
+    assert snake_order[5] == 2  # Sixth pick: team 2
