@@ -5,7 +5,6 @@ import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 import random
 
 from .config import BASELINE_POSITIONS
@@ -189,56 +188,6 @@ def perturb_initial_adp(
     perturbed.sort(key=lambda x: x[2])
 
     return perturbed
-
-
-def save_adp_results(
-    adp_data: list[tuple[Player, float, int]], output_path: str
-) -> None:
-    """Save ADP results to CSV file.
-
-    Args:
-        adp_data: List of (player, vbr, adp) tuples
-        output_path: Path to output CSV file
-    """
-    if not adp_data:
-        return
-
-    fieldnames = ["player", "position", "team", "avg", "total", "vbr", "adp"]
-
-    with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-
-        for player, vbr, adp in adp_data:
-            writer.writerow(
-                {
-                    "player": player.name,
-                    "position": player.position,
-                    "team": player.team,
-                    "avg": player.avg,
-                    "total": player.total,
-                    "vbr": vbr,
-                    "adp": adp,
-                }
-            )
-
-
-def save_regret_results(regret_data: list[dict[str, Any]], output_path: str) -> None:
-    """Save regret results to CSV file.
-
-    Args:
-        regret_data: List of dictionaries with regret information
-        output_path: Path to output CSV file
-    """
-    if not regret_data:
-        return
-
-    fieldnames = regret_data[0].keys()
-
-    with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(regret_data)
 
 
 def create_run_directory(learning_rate: float, max_iterations: int) -> tuple[str, Path]:

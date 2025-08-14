@@ -12,11 +12,9 @@ from optimal_adp.data_io import (
     create_run_directory,
     get_pick_details,
     load_player_data,
-    save_adp_results,
     save_convergence_history_csv,
     save_final_adp_csv,
     save_initial_vbr_adp_csv,
-    save_regret_results,
     save_regrets_csv,
     save_run_parameters_txt,
     save_team_scores_csv,
@@ -154,67 +152,6 @@ def test_compute_initial_adp() -> None:
     assert adp_data[0][0].name == "Ja'Marr Chase"  # Highest VBR
     assert adp_data[1][0].name == "Lamar Jackson"  # Second highest VBR
     assert adp_data[2][0].name == "Saquon Barkley"  # Third highest VBR
-
-
-def test_save_adp_results() -> None:
-    """Test saving ADP results to CSV."""
-    # Create sample ADP data using our data structures
-    adp_data = [
-        (Player("Lamar Jackson", "QB", "BAL", 25.6, 434.4), 3.6, 1),
-        (Player("Ja'Marr Chase", "WR", "CIN", 20.0, 339.5), 5.0, 2),
-        (Player("Saquon Barkley", "RB", "PHI", 21.2, 338.8), 2.2, 3),
-    ]
-
-    # Test saving to temporary file
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
-        temp_path = f.name
-
-    # Use our actual save function
-    save_adp_results(adp_data, temp_path)
-
-    # Verify file was written correctly
-    with open(temp_path, "r") as f:
-        reader = csv.DictReader(f)
-        saved_data = list(reader)
-
-    assert len(saved_data) == 3
-    assert saved_data[0]["player"] == "Lamar Jackson"
-    assert saved_data[0]["position"] == "QB"
-    assert float(saved_data[0]["adp"]) == 1
-    assert float(saved_data[0]["vbr"]) == pytest.approx(3.6)
-
-    # Clean up
-    Path(temp_path).unlink()
-
-
-def test_save_regret_results() -> None:
-    """Test saving regret results to CSV."""
-    regret_data = [
-        {"pick_number": 1, "player": "Lamar Jackson", "regret": 0.0},
-        {"pick_number": 2, "player": "Ja'Marr Chase", "regret": -1.5},
-        {"pick_number": 3, "player": "Saquon Barkley", "regret": 2.1},
-    ]
-
-    # Test saving to temporary file
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
-        temp_path = f.name
-
-    # Use our actual save function
-    save_regret_results(regret_data, temp_path)
-
-    # Verify file contents
-    with open(temp_path, "r") as f:
-        reader = csv.DictReader(f)
-        saved_data = list(reader)
-
-    assert len(saved_data) == 3
-    assert int(saved_data[0]["pick_number"]) == 1
-    assert saved_data[0]["player"] == "Lamar Jackson"
-    assert float(saved_data[0]["regret"]) == pytest.approx(0.0)
-    assert float(saved_data[2]["regret"]) == pytest.approx(2.1)
-
-    # Clean up
-    Path(temp_path).unlink()
 
 
 def test_player_filtering() -> None:

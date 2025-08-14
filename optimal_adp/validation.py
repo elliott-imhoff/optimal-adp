@@ -174,61 +174,6 @@ def validate_convergence_criteria(
     return result
 
 
-def validate_position_hierarchy_results(
-    final_adp: dict[str, float], players: list[Player]
-) -> ValidationResult:
-    """
-    Validate that position hierarchy is maintained in draft results.
-
-    Args:
-        final_adp: Final ADP values
-        players: List of all players
-
-    Returns:
-        ValidationResult with success/failure status
-    """
-    result = ValidationResult()
-
-    is_valid, violations = validate_position_hierarchy(final_adp, players)
-    if is_valid:
-        result.add_success("Position hierarchy maintained")
-    else:
-        result.add_failure("Position hierarchy violations found")
-        for violation in violations:
-            result.add_failure(violation)
-
-    return result
-
-
-def validate_elite_players_placement(
-    final_adp: dict[str, float], players: list[Player], num_teams: int = NUM_TEAMS
-) -> ValidationResult:
-    """
-    Validate that elite players are drafted in the first round.
-
-    Args:
-        final_adp: Final ADP values
-        players: List of all players
-        num_teams: Number of teams (for first round cutoff)
-
-    Returns:
-        ValidationResult with success/failure status
-    """
-    result = ValidationResult()
-
-    is_valid, violations = validate_elite_players_first_round(
-        final_adp, players, num_teams
-    )
-    if is_valid:
-        result.add_success("Top QB, RB, and WR all drafted in first round")
-    else:
-        result.add_failure("Elite players not in first round:")
-        for violation in violations:
-            result.add_failure(f"  {violation}")
-
-    return result
-
-
 def validate_optimization_results(
     players: list[Player],
     final_adp: dict[str, float],
@@ -256,12 +201,27 @@ def validate_optimization_results(
         convergence_result = validate_convergence_criteria(iterations, max_iterations)
         result.merge(convergence_result)
 
-        # Validate draft results using players
-        hierarchy_result = validate_position_hierarchy_results(final_adp, players)
-        result.merge(hierarchy_result)
+        # Validate position hierarchy
+        is_hierarchy_valid, hierarchy_violations = validate_position_hierarchy(
+            final_adp, players
+        )
+        if is_hierarchy_valid:
+            result.add_success("Position hierarchy maintained")
+        else:
+            result.add_failure("Position hierarchy violations found")
+            for violation in hierarchy_violations:
+                result.add_failure(violation)
 
-        elite_result = validate_elite_players_placement(final_adp, players, num_teams)
-        result.merge(elite_result)
+        # Validate elite players placement
+        is_elite_valid, elite_violations = validate_elite_players_first_round(
+            final_adp, players, num_teams
+        )
+        if is_elite_valid:
+            result.add_success("Top QB, RB, and WR all drafted in first round")
+        else:
+            result.add_failure("Elite players not in first round:")
+            for violation in elite_violations:
+                result.add_failure(f"  {violation}")
 
         # Final summary
         if result.all_passed():
