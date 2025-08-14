@@ -2,7 +2,7 @@
 
 import logging
 
-from .models import DraftState, Player
+from optimal_adp.models import DraftState, Player
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ import copy
 import logging
 from dataclasses import dataclass
 
-from .config import (
+from optimal_adp.config import (
     ROSTER_SLOTS,
     NUM_TEAMS,
     FLEX_POSITIONS,
