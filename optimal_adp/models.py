@@ -440,22 +440,18 @@ class DraftState:
 
         return self
 
+    def get_pick_details(self, player_name: str) -> tuple[int, int, int]:
+        """Get drafting team, round, and pick number for a player.
 
-# Convenience function for backward compatibility
-def simulate_full_draft(
-    players: list[Player],
-    initial_adp: dict[str, float],
-    num_teams: int = NUM_TEAMS,
-) -> DraftState:
-    """Simulate complete snake draft using greedy algorithm.
+        Args:
+            player_name: Name of the player
 
-    Args:
-        players: List of all eligible players
-        initial_adp: Dictionary of player_name -> ADP value
-        num_teams: Number of teams in the draft (defaults to NUM_TEAMS)
-
-    Returns:
-        Final draft state with all rosters filled
-    """
-    draft_state = DraftState(players, initial_adp, num_teams)
-    return draft_state.simulate_full_draft()
+        Returns:
+            Tuple of (team_id, round_num, pick_num) all 1-indexed, or (0, 0, 0) if not drafted
+        """
+        for pick_num, (_, player) in enumerate(self.draft_history):
+            if player.name == player_name:
+                team_id = self.pick_order[pick_num]
+                round_num = (pick_num // self.num_teams) + 1
+                return team_id + 1, round_num, pick_num + 1  # 1-indexed
+        return 0, 0, 0  # Not drafted

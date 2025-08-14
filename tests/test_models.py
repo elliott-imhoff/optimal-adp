@@ -5,7 +5,6 @@ from optimal_adp.models import (
     DraftState,
     Player,
     Team,
-    simulate_full_draft,
 )
 from optimal_adp.config import NUM_TEAMS
 
@@ -367,7 +366,8 @@ def test_simulate_full_draft_small() -> None:
 
     adp_mapping = {p.name: i + 1.0 for i, p in enumerate(players)}
 
-    final_state = simulate_full_draft(players, adp_mapping)
+    final_state = DraftState(players, adp_mapping)
+    final_state.simulate_full_draft()
 
     # Should have made as many picks as possible
     # With 40 players and 10 teams, should make 40 picks (4 rounds)

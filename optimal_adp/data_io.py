@@ -216,27 +216,6 @@ def create_run_directory(learning_rate: float, max_iterations: int) -> tuple[str
     return run_id, run_dir
 
 
-def get_pick_details(
-    player_name: str, draft_state: DraftState, num_teams: int
-) -> tuple[int, int, int]:
-    """Get drafting team, round, and pick number for a player.
-
-    Args:
-        player_name: Name of the player
-        draft_state: Draft state containing draft history
-        num_teams: Number of teams in the draft
-
-    Returns:
-        Tuple of (team_id, round_num, pick_num) all 1-indexed, or (0, 0, 0) if not drafted
-    """
-    for pick_num, (_, player) in enumerate(draft_state.draft_history):
-        if player.name == player_name:
-            team_id = draft_state.pick_order[pick_num]
-            round_num = (pick_num // num_teams) + 1
-            return team_id + 1, round_num, pick_num + 1  # 1-indexed
-    return 0, 0, 0  # Not drafted
-
-
 def save_final_adp_csv(
     output_file_path: str,
     players: list[Player],
@@ -258,7 +237,7 @@ def save_final_adp_csv(
     for player in players:
         if player.name in final_adp:
             team_id, round_num, pick_num = (
-                get_pick_details(player.name, final_draft_state, num_teams)
+                final_draft_state.get_pick_details(player.name)
                 if final_draft_state
                 else (0, 0, 0)
             )

@@ -15,7 +15,7 @@ from optimal_adp.data_io import (
     save_team_scores_csv,
     perturb_initial_adp,
 )
-from optimal_adp.models import simulate_full_draft, DraftState, Player
+from optimal_adp.models import DraftState, Player
 from optimal_adp.regret import (
     calculate_all_regrets,
     rescale_adp_to_picks,
@@ -117,7 +117,8 @@ def optimize_adp(
 
         # 3a: Simulate draft with current ADP
         logger.debug("Simulating draft with current ADP")
-        draft_state = simulate_full_draft(all_players, current_adp, num_teams)
+        draft_state = DraftState(all_players, current_adp, num_teams)
+        draft_state.simulate_full_draft()
         logger.debug(f"Draft completed with {len(draft_state.draft_history)} picks")
 
         # 3b: Calculate regret scores for all picks

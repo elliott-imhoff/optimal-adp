@@ -10,7 +10,6 @@ import pytest
 from optimal_adp.data_io import (
     compute_initial_adp,
     create_run_directory,
-    get_pick_details,
     load_player_data,
     save_convergence_history_csv,
     save_final_adp_csv,
@@ -277,14 +276,13 @@ class TestArtifactsFunctions:
                 os.chdir(original_cwd)
 
     def test_get_pick_details_drafted_player(self) -> None:
-        """Test getting pick details for a drafted player."""
+        """Test getting pick details for a drafted player via DraftState method."""
         # Create test players
         player1 = Player("Player1", "QB", "TEAM1", 25.0, 400.0)
         player2 = Player("Player2", "RB", "TEAM2", 20.0, 320.0)
         players = [player1, player2]
 
         # Create a simple draft state with 2 teams
-        num_teams = 2
         draft_state = DraftState(players, {"Player1": 1.0, "Player2": 2.0})
 
         # Simulate the draft to populate draft_history
@@ -295,23 +293,19 @@ class TestArtifactsFunctions:
         draft_state.pick_order = [0, 1]  # Team order for picks
 
         # Test Player1 (first pick)
-        team_id, round_num, pick_num = get_pick_details(
-            "Player1", draft_state, num_teams
-        )
+        team_id, round_num, pick_num = draft_state.get_pick_details("Player1")
         assert team_id == 1  # Team 0 becomes team 1 (1-indexed)
         assert round_num == 1  # First round
         assert pick_num == 1  # First pick
 
         # Test Player2 (second pick)
-        team_id, round_num, pick_num = get_pick_details(
-            "Player2", draft_state, num_teams
-        )
+        team_id, round_num, pick_num = draft_state.get_pick_details("Player2")
         assert team_id == 2  # Team 1 becomes team 2 (1-indexed)
         assert round_num == 1  # First round
         assert pick_num == 2  # Second pick
 
     def test_get_pick_details_undrafted_player(self) -> None:
-        """Test getting pick details for an undrafted player."""
+        """Test getting pick details for an undrafted player via DraftState method."""
         player1 = Player("Player1", "QB", "TEAM1", 25.0, 400.0)
         players = [player1]
 
@@ -319,7 +313,7 @@ class TestArtifactsFunctions:
         draft_state.draft_history = []  # Empty draft history
 
         # Test undrafted player
-        team_id, round_num, pick_num = get_pick_details("Player1", draft_state, 2)
+        team_id, round_num, pick_num = draft_state.get_pick_details("Player1")
         assert team_id == 0
         assert round_num == 0
         assert pick_num == 0
