@@ -334,7 +334,7 @@ class TestArtifactsFunctions:
             final_adp = {"Player1": 1.5, "Player2": 2.3}
 
             # Save without draft state
-            save_final_adp_csv(temp_path, players, final_adp, None, 2)
+            save_final_adp_csv(temp_path, players, final_adp, None)
 
             # Read and verify
             with open(temp_path, "r") as f:

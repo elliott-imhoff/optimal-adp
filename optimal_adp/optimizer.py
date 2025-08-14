@@ -275,7 +275,6 @@ def run_optimization_loop(
                 players,
                 final_adp,
                 draft_state,
-                num_teams,
             )
 
             # Save other artifacts

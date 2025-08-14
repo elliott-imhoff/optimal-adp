@@ -231,7 +231,6 @@ def save_final_adp_csv(
     players: list[Player],
     final_adp: dict[str, float],
     final_draft_state: DraftState | None,
-    num_teams: int,
 ) -> None:
     """Save final ADP results to CSV file with draft details.
 
@@ -268,6 +267,8 @@ def save_final_adp_csv(
 
     # Sort by ADP (ascending order)
     adp_players.sort(key=lambda x: float(str(x["adp"])))
+    if final_draft_state:
+        adp_players = adp_players[: final_draft_state.total_picks]
 
     # Ensure output directory exists
     Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
